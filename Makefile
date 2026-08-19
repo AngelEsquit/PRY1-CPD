@@ -1,6 +1,5 @@
 # Makefile - Screensaver de fluidos (Navier-Stokes)
-# Version secuencial. La carpeta src/paralela queda preparada para la
-# siguiente fase de implementacion de la version paralela con OpenMP.
+# Version secuencial organizada por modulos funcionales.
 
 CC       = gcc
 CFLAGS   = -std=c11 -Wall -Wextra -O2 -Iinclude
@@ -8,7 +7,7 @@ SDLFLAGS = $(shell pkg-config --cflags sdl2)
 SDLLIBS  = $(shell pkg-config --libs sdl2)
 LIBS     = $(SDLLIBS) -lm
 
-SEQ_SRC  = $(filter-out src/secuencial/Screensaver_seq.c,$(wildcard src/secuencial/*.c))
+SEQ_SRC  = $(shell find src/secuencial -path 'src/secuencial/legacy' -prune -o -type f -name '*.c' -print | sort)
 SEQ_BIN  = Screensaver_seq
 
 .PHONY: all clean run

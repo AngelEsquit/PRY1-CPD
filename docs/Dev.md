@@ -41,14 +41,20 @@ PRY1-CPD/
 │   └── utilidades.h
 └── src/
     ├── secuencial/
-    │   ├── campos.c
-    │   ├── configuracion.c
-    │   ├── fuentes.c
-    │   ├── main.c
-    │   ├── render.c
-    │   ├── Screensaver_seq.c
-    │   ├── solver.c
-    │   └── utilidades.c
+    │   ├── app/
+    │   │   └── main.c
+    │   ├── config/
+    │   │   └── configuracion.c
+    │   ├── fluidos/
+    │   │   ├── campos.c
+    │   │   ├── fuentes.c
+    │   │   └── solver.c
+    │   ├── render/
+    │   │   └── render.c
+    │   ├── utilidades/
+    │   │   └── utilidades.c
+    │   └── legacy/
+    │       └── Screensaver_seq.c
     └── paralela/
         └── (reservado para la siguiente etapa)
 ```
@@ -56,6 +62,7 @@ PRY1-CPD/
 ### Convencion de organizacion
 
 - No se permiten archivos .c en la raiz.
+- La version secuencial se organiza por responsabilidades funcionales dentro de src/secuencial/.
 - La logica principal de cada version vive bajo src/secuencial/ o src/paralela/.
 - Las cabeceras comunes y reutilizables viven en include/.
 - La documentacion viva en docs/.
@@ -147,7 +154,7 @@ Contiene utilidades generales como:
 
 ## 6. Archivos fuente actuales
 
-### src/secuencial/main.c
+### src/secuencial/app/main.c
 Es el punto de entrada del programa. Aqui se:
 
 - parsean argumentos
@@ -158,26 +165,26 @@ Es el punto de entrada del programa. Aqui se:
 - renderiza la textura
 - mide FPS y muestra el titulo de la ventana
 
-### src/secuencial/configuracion.c
+### src/secuencial/config/configuracion.c
 Implementa la validacion y lectura de las opciones del programa. Mantiene la logica de parseo separada y aislada del resto del flujo principal.
 
-### src/secuencial/campos.c
+### src/secuencial/fluidos/campos.c
 Gestiona la reserva, liberacion y limpieza de los campos del fluido. Esta es la capa de memoria del sistema.
 
-### src/secuencial/fuentes.c
+### src/secuencial/fluidos/fuentes.c
 Genera las fuentes de tinta y las inyecta durante la simulacion. Aqui se controla la variacion temporal y el giro de la direccion del chorro.
 
-### src/secuencial/solver.c
+### src/secuencial/fluidos/solver.c
 Implementa la numerica principal: la difusion, adveccion, frontera, proyeccion y relajacion lineal. Es el bloque mas importante para la futura version paralela.
 
-### src/secuencial/render.c
+### src/secuencial/render/render.c
 Conecta el estado numerico con SDL para dibujar la simulacion en pantalla.
 
-### src/secuencial/utilidades.c
+### src/secuencial/utilidades/utilidades.c
 Centraliza funciones complementarias que no pertenecen al nucleo fisico ni a la capa visual.
 
-### src/secuencial/Screensaver_seq.c
-Es una version del programa en un solo archivo de referencia para comparacion historica. Actualmente se ha dejado dentro de src/secuencial para evitar la presencia de .c en la raiz y mantener una estructura coherente.
+### src/secuencial/legacy/Screensaver_seq.c
+Es una version del programa en un solo archivo de referencia para comparacion historica. Se mantiene aislada en la carpeta legacy para no interferir con la estructura modular actual.
 
 ---
 
