@@ -72,6 +72,7 @@ Genera el ejecutable `screensaver_seq`. Para limpiar: `make clean`.
 | `-t <dt>` | Paso de tiempo de la simulación | 0.001–1.0 | 0.10 |
 | `-v <visc>` | Viscosidad cinemática del fluido | 0–1 | 0.0 |
 | `-d <diff>` | Coeficiente de difusión de la tinta | 0–1 | 0.0 |
+| `-b` | Activa el sistema de n-cuerpos (las fuentes se mueven por gravedad) | — | desactivado |
 | `-h` | Muestra la ayuda | — | — |
 
 ### Ejemplos
@@ -81,6 +82,7 @@ Genera el ejecutable `screensaver_seq`. Para limpiar: `make clean`.
 ./screensaver_seq -n 192 -f 12             # más resolución y más fuentes
 ./screensaver_seq -n 256 -f 8 -s 42        # reproducible con semilla fija
 ./screensaver_seq -n 128 -v 0.0001 -d 0.00001   # fluido más viscoso y difuso
+./screensaver_seq -b -f 10                 # fuentes en movimiento (n-cuerpos)
 ```
 
 ### Controles

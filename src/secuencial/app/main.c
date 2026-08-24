@@ -93,8 +93,9 @@ int main(int argc, char *argv[])
     printf("  Ventana      : %d x %d px\n",
            config.ventana_ancho, config.ventana_alto);
     printf("  Semilla      : %u\n", config.semilla);
-    printf("  dt / visc / diff : %.3f / %.5f / %.5f\n\n",
+    printf("  dt / visc / diff : %.3f / %.5f / %.5f\n",
            (double)config.dt, (double)config.viscosidad, (double)config.difusion);
+    printf("  Sistema n-cuerpos: %s\n\n", config.nbody ? "activado" : "desactivado");
 
     /* --- 2. Memoria de los campos ---------------------------------------- */
     if (!reservar_campos(&campos, config.malla_n)) {
@@ -176,7 +177,9 @@ int main(int argc, char *argv[])
         }
 
         /* 4.2 Un paso de simulacion */
-        actualizar_fuentes_nbody(fuentes, config.num_fuentes, config.malla_n);
+        if (config.nbody) {
+            actualizar_fuentes_nbody(fuentes, config.num_fuentes, config.malla_n);
+        }
         inyectar_fuentes(fuentes, config.num_fuentes, &campos);
 
         paso_velocidad(&campos, config.viscosidad, config.dt);

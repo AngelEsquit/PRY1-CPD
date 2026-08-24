@@ -19,6 +19,7 @@ typedef struct {
     float        dt;
     float        viscosidad;
     float        difusion;
+    int          nbody;          /* 1 = las fuentes se mueven por gravitacion */
 } Configuracion;
 
 /*

@@ -23,6 +23,8 @@ static void imprimir_ayuda(const char *nombre_programa)
         "  -t <dt>      Paso de tiempo de la simulacion        (def. %.3f)\n"
         "  -v <visc>    Viscosidad cinematica del fluido       (def. %.5f)\n"
         "  -d <diff>    Coeficiente de difusion de la tinta    (def. %.5f)\n"
+        "  -b           Activa el sistema de n-cuerpos: las fuentes se mueven\n"
+        "               por atraccion gravitacional mutua  (def. desactivado)\n"
         "  -h           Muestra esta ayuda y termina\n\n"
         "Controles en ejecucion:\n"
         "  ESC / Q      Salir\n"
@@ -126,6 +128,7 @@ int procesar_argumentos(int argc, char *argv[], Configuracion *config)
     config->dt            = DT_DEFAULT;
     config->viscosidad    = VISC_DEFAULT;
     config->difusion      = DIFF_DEFAULT;
+    config->nbody         = 0;
 
     for (indice = 1; indice < argc; indice++) {
         const char *opcion = argv[indice];
@@ -133,6 +136,11 @@ int procesar_argumentos(int argc, char *argv[], Configuracion *config)
         if (strcmp(opcion, "-h") == 0 || strcmp(opcion, "--help") == 0) {
             imprimir_ayuda(argv[0]);
             return -1;
+        }
+
+        if (strcmp(opcion, "-b") == 0 || strcmp(opcion, "--nbody") == 0) {
+            config->nbody = 1;
+            continue;
         }
 
         /* Todas las demas opciones requieren un valor asociado */
