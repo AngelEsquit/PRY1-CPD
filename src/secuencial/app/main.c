@@ -144,7 +144,7 @@ int main(int argc, char *argv[])
 
     textura = SDL_CreateTexture(renderizador, SDL_PIXELFORMAT_ARGB8888,
                                 SDL_TEXTUREACCESS_STREAMING,
-                                config.malla_n, config.malla_n);
+                                config.ventana_ancho, config.ventana_alto);
     if (textura == NULL) {
         fprintf(stderr, "Error: no se pudo crear la textura: %s\n", SDL_GetError());
         codigo_salida = EXIT_FAILURE;
@@ -191,7 +191,7 @@ int main(int argc, char *argv[])
         disipar_tinta(&campos);
 
         /* 4.3 Dibujo */
-        renderizar_tinta(textura, &campos);
+        renderizar_tinta(textura, &campos, config.ventana_ancho, config.ventana_alto);
         SDL_RenderClear(renderizador);
         SDL_RenderCopy(renderizador, textura, NULL, NULL);
         SDL_RenderPresent(renderizador);

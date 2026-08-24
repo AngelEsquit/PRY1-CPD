@@ -28,18 +28,27 @@
 #define PI 3.14159265358979323846f
 
 /* Parametros fisicos por defecto (ajustables por linea de comandos) */
-#define DT_DEFAULT         0.01f   /* paso de tiempo                           */
-#define BRILLO_FACTOR       1.0f   /* factor de brillo aplicado al render      */
-#define CONTRASTE_FACTOR     2.0f   /* satura mas lento cuanto mas alto (evita
+#define DT_DEFAULT         0.07f   /* paso de tiempo                           */
+#define BRILLO_FACTOR       0.6f   /* factor de brillo aplicado al render      */
+#define CONTRASTE_FACTOR     1.0f   /* satura mas lento cuanto mas alto (evita
                                         que la acumulacion de tinta se vea
                                         blanca al superponerse muchas fuentes) */
-#define SATURACION_FACTOR    1.6f   /* aleja cada canal del gris promedio del
+#define SATURACION_FACTOR    2.4f   /* aleja cada canal del gris promedio del
                                         pixel (>1 = mas vivido); al ser
                                         simetrico respecto al promedio no
                                         empuja el color hacia blanco        */
-#define VISC_DEFAULT       0.1000f /* viscosidad cinematica del fluido         */
-#define DIFF_DEFAULT       0.0000f /* difusion de la tinta                     */
-#define DISIPACION         0.3f  /* desvanecimiento de la tinta por frame    */
+#define VISC_DEFAULT       0.0000f /* viscosidad cinematica del fluido         */
+#define DIFF_DEFAULT       0.0000f /* difusion de la tinta: sin esto (0.0) la
+                                       tinta solo se suaviza por la forma fija
+                                       del nucleo de inyeccion, y se ve con un
+                                       borde duro/brusco justo al nacer; con
+                                       difusion activa cada fuente nace ya
+                                       difuminandose, como tinta real en agua */
+#define DISIPACION         0.995f /* retencion de tinta por frame (factor
+                                      multiplicativo); con 0.3 la tinta perdia
+                                      el 70% de su valor en cada frame y se
+                                      apagaba antes de poder advectarse fuera
+                                      de la celda de origen                   */
 
 /* ---------------------------------------------------------------------------
  * Indexacion de la malla.

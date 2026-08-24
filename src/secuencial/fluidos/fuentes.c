@@ -28,7 +28,14 @@ void inicializar_fuentes(FuenteTinta *fuentes, int cantidad, int resolucion)
 
         fuentes[f].fase        = aleatorio_rango(0.0f, 2.0f * PI);
         fuentes[f].vel_angular = aleatorio_rango(-0.045f, 0.045f);
-        fuentes[f].fuerza      = aleatorio_rango(25.0f, 60.0f);
+        /* Con fuerza en [25,60] el desplazamiento por adveccion junto a la
+         * fuente (dt*malla_n*|v|) llega a ~15-19 celdas por frame: varias
+         * veces el diametro del vecindario de inyeccion, asi que la tinta
+         * "salta" en vez de fluir, y se ve como gotas cayendo en vez de un
+         * chorro continuo. En [6,14] el salto queda en ~5-6 celdas, del
+         * orden del propio vecindario de inyeccion, y frames consecutivos
+         * se solapan en un trazo continuo. */
+        fuentes[f].fuerza      = aleatorio_rango(6.0f, 14.0f);
         fuentes[f].caudal      = aleatorio_rango(60.0f, 110.0f);
     }
 }
@@ -39,9 +46,16 @@ void inicializar_fuentes(FuenteTinta *fuentes, int cantidad, int resolucion)
  *
  * ELEMENTO TRIGONOMETRICO: la direccion del chorro de cada fuente rota en el
  * tiempo segun (cos(fase), sin(fase)), lo que genera vortices en espiral.
- * La tinta se deposita en un vecindario de 3x3 celdas para suavizar la
- * inyeccion y evitar valores puntuales muy bruscos.
+ * La tinta se deposita en un vecindario de 5x5 celdas con caida gaussiana
+ * (en vez de un valor uniforme) para que la mancha nazca ya redondeada: con
+ * solo 3x3 celdas la forma se percibe como un rombo/pixelado apenas se crea,
+ * porque no hay suficientes muestras para leerse como un circulo, y como la
+ * difusion de tinta esta en 0 por defecto nada la suaviza despues salvo el
+ * movimiento.
  */
+#define FUENTE_RADIO  2
+#define FUENTE_SIGMA  1.1f
+
 void inyectar_fuentes(FuenteTinta *fuentes, int cantidad, CamposFluido *campos)
 {
     int f, dx, dy, celda_i, celda_j;
@@ -65,8 +79,13 @@ void inyectar_fuentes(FuenteTinta *fuentes, int cantidad, CamposFluido *campos)
         direccion_x = cosf(fuentes[f].fase) * fuentes[f].fuerza;
         direccion_y = sinf(fuentes[f].fase) * fuentes[f].fuerza;
 
-        for (dy = -1; dy <= 1; dy++) {
-            for (dx = -1; dx <= 1; dx++) {
+        for (dy = -FUENTE_RADIO; dy <= FUENTE_RADIO; dy++) {
+            for (dx = -FUENTE_RADIO; dx <= FUENTE_RADIO; dx++) {
+                /* Nucleo gaussiano normalizado al centro (peso=1 en dx=dy=0),
+                 * cae suavemente hasta los bordes del vecindario 5x5. */
+                float dist2 = (float)(dx * dx + dy * dy);
+                float peso  = expf(-dist2 / (2.0f * FUENTE_SIGMA * FUENTE_SIGMA));
+
                 celda_i = fuentes[f].celda_x + dx;
                 celda_j = fuentes[f].celda_y + dy;
 
@@ -76,15 +95,15 @@ void inyectar_fuentes(FuenteTinta *fuentes, int cantidad, CamposFluido *campos)
                     continue;
                 }
 
-                campos->vel_x_p[IX(celda_i, celda_j)] += direccion_x;
-                campos->vel_y_p[IX(celda_i, celda_j)] += direccion_y;
+                campos->vel_x_p[IX(celda_i, celda_j)] += direccion_x * peso;
+                campos->vel_y_p[IX(celda_i, celda_j)] += direccion_y * peso;
 
                 campos->tinta_r_p[IX(celda_i, celda_j)] +=
-                    fuentes[f].caudal * fuentes[f].color_r;
+                    fuentes[f].caudal * fuentes[f].color_r * peso;
                 campos->tinta_g_p[IX(celda_i, celda_j)] +=
-                    fuentes[f].caudal * fuentes[f].color_g;
+                    fuentes[f].caudal * fuentes[f].color_g * peso;
                 campos->tinta_b_p[IX(celda_i, celda_j)] +=
-                    fuentes[f].caudal * fuentes[f].color_b;
+                    fuentes[f].caudal * fuentes[f].color_b * peso;
             }
         }
     }
