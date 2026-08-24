@@ -9,11 +9,23 @@
  * ======================================================================== */
 
 /*
+ * Radio (en celdas) del vecindario de inyeccion de cada fuente (ver
+ * inyectar_fuentes). Es publico porque tambien delimita cuanto puede
+ * acercarse una fuente al borde de la malla sin perder celdas interiores
+ * validas (ver ncuerpos.c).
+ */
+#define FUENTE_RADIO  2
+
+/*
  * Estructura: FuenteTinta
  * Emisor puntual que inyecta color y cantidad de movimiento en la malla.
+ * Las fuentes se desplazan por la malla como un sistema de n-cuerpos: cada
+ * una atrae gravitacionalmente a las demas (ver ncuerpos.h).
  */
 typedef struct {
-    int   celda_x, celda_y;      /* posicion de la fuente en la malla         */
+    float pos_x, pos_y;          /* posicion continua en la malla (celdas)    */
+    float vel_x, vel_y;          /* velocidad de desplazamiento (celdas/frame)*/
+    float masa;                  /* masa gravitacional (n-cuerpos)            */
     float color_r, color_g, color_b; /* color de la tinta en [0,1]            */
     float fase;                  /* fase angular actual (radianes)            */
     float vel_angular;           /* rapidez de giro del chorro (rad/frame)    */
@@ -22,9 +34,9 @@ typedef struct {
 } FuenteTinta;
 
 /*
- * Inicializa las fuentes con posicion, color, fase y fuerza pseudoaleatorias.
- * Las posiciones se mantienen alejadas del borde para que el chorro se
- * desarrolle antes de chocar con los muros.
+ * Inicializa las fuentes con posicion, velocidad, masa, color, fase y fuerza
+ * pseudoaleatorias. Las posiciones se mantienen alejadas del borde para que
+ * el chorro se desarrolle antes de chocar con los muros.
  */
 void inicializar_fuentes(FuenteTinta *fuentes, int cantidad, int resolucion);
 

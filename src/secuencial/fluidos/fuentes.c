@@ -6,9 +6,9 @@
 #include <math.h>
 
 /*
- * Inicializa las fuentes con posicion, color, fase y fuerza pseudoaleatorias.
- * Las posiciones se mantienen alejadas del borde para que el chorro se
- * desarrolle antes de chocar con los muros.
+ * Inicializa las fuentes con posicion, velocidad, masa, color, fase y fuerza
+ * pseudoaleatorias. Las posiciones se mantienen alejadas del borde para que
+ * el chorro se desarrolle antes de chocar con los muros.
  */
 void inicializar_fuentes(FuenteTinta *fuentes, int cantidad, int resolucion)
 {
@@ -16,10 +16,16 @@ void inicializar_fuentes(FuenteTinta *fuentes, int cantidad, int resolucion)
     const int margen = (resolucion / 8 > 2) ? resolucion / 8 : 2;
 
     for (f = 0; f < cantidad; f++) {
-        fuentes[f].celda_x = margen +
-            (int)aleatorio_rango(0.0f, (float)(resolucion - 2 * margen));
-        fuentes[f].celda_y = margen +
-            (int)aleatorio_rango(0.0f, (float)(resolucion - 2 * margen));
+        fuentes[f].pos_x = (float)margen +
+            aleatorio_rango(0.0f, (float)(resolucion - 2 * margen));
+        fuentes[f].pos_y = (float)margen +
+            aleatorio_rango(0.0f, (float)(resolucion - 2 * margen));
+
+        /* Velocidad inicial pequena: el movimiento principal lo genera la
+         * atraccion gravitacional mutua una vez arranca la simulacion. */
+        fuentes[f].vel_x = aleatorio_rango(-0.3f, 0.3f);
+        fuentes[f].vel_y = aleatorio_rango(-0.3f, 0.3f);
+        fuentes[f].masa  = aleatorio_rango(25.0f, 70.0f);
 
         /* Color saturado: un canal dominante y los otros dos parciales */
         fuentes[f].color_r = aleatorio_rango(0.15f, 1.0f);
@@ -53,12 +59,11 @@ void inicializar_fuentes(FuenteTinta *fuentes, int cantidad, int resolucion)
  * difusion de tinta esta en 0 por defecto nada la suaviza despues salvo el
  * movimiento.
  */
-#define FUENTE_RADIO  2
 #define FUENTE_SIGMA  1.1f
 
 void inyectar_fuentes(FuenteTinta *fuentes, int cantidad, CamposFluido *campos)
 {
-    int f, dx, dy, celda_i, celda_j;
+    int f, dx, dy, celda_i, celda_j, centro_x, centro_y;
     float direccion_x, direccion_y;
 
     /* Los buffers fuente se limpian cada frame */
@@ -79,6 +84,12 @@ void inyectar_fuentes(FuenteTinta *fuentes, int cantidad, CamposFluido *campos)
         direccion_x = cosf(fuentes[f].fase) * fuentes[f].fuerza;
         direccion_y = sinf(fuentes[f].fase) * fuentes[f].fuerza;
 
+        /* La posicion es continua (la mueve el sistema de n-cuerpos); se
+         * redondea a la celda mas cercana solo para ubicar el vecindario de
+         * inyeccion. */
+        centro_x = (int)(fuentes[f].pos_x + 0.5f);
+        centro_y = (int)(fuentes[f].pos_y + 0.5f);
+
         for (dy = -FUENTE_RADIO; dy <= FUENTE_RADIO; dy++) {
             for (dx = -FUENTE_RADIO; dx <= FUENTE_RADIO; dx++) {
                 /* Nucleo gaussiano normalizado al centro (peso=1 en dx=dy=0),
@@ -86,8 +97,8 @@ void inyectar_fuentes(FuenteTinta *fuentes, int cantidad, CamposFluido *campos)
                 float dist2 = (float)(dx * dx + dy * dy);
                 float peso  = expf(-dist2 / (2.0f * FUENTE_SIGMA * FUENTE_SIGMA));
 
-                celda_i = fuentes[f].celda_x + dx;
-                celda_j = fuentes[f].celda_y + dy;
+                celda_i = centro_x + dx;
+                celda_j = centro_y + dy;
 
                 /* Solo se escribe dentro de las celdas interiores */
                 if (celda_i < 1 || celda_i > malla_n ||

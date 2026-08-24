@@ -33,6 +33,7 @@
  *   configuracion.{h,c}  - argumentos de linea de comandos
  *   campos.{h,c}         - memoria de los campos de la simulacion
  *   fuentes.{h,c}        - fuentes de tinta
+ *   ncuerpos.{h,c}       - movimiento de las fuentes (sistema de n-cuerpos)
  *   solver.{h,c}         - nucleo numerico (Stable Fluids)
  *   render.{h,c}         - volcado a textura SDL
  *   main.c               - programa principal (este archivo)
@@ -50,6 +51,7 @@
 #include "configuracion.h"
 #include "campos.h"
 #include "fuentes.h"
+#include "ncuerpos.h"
 #include "solver.h"
 #include "render.h"
 
@@ -174,6 +176,7 @@ int main(int argc, char *argv[])
         }
 
         /* 4.2 Un paso de simulacion */
+        actualizar_fuentes_nbody(fuentes, config.num_fuentes, config.malla_n);
         inyectar_fuentes(fuentes, config.num_fuentes, &campos);
 
         paso_velocidad(&campos, config.viscosidad, config.dt);
