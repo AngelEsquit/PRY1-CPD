@@ -108,10 +108,12 @@ Define la estructura de configuracion del programa, asi como la interfaz para pa
 - -f
 - -W
 - -H
+- -p / -F (pantalla completa con resolucion actual)
 - -s
 - -t
 - -v
 - -d
+- -b
 - -h
 
 ### include/campos.h

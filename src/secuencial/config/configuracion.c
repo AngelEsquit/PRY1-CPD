@@ -25,6 +25,8 @@ static void imprimir_ayuda(const char *nombre_programa)
         "  -d <diff>    Coeficiente de difusion de la tinta    (def. %.5f)\n"
         "  -b           Activa el sistema de n-cuerpos: las fuentes se mueven\n"
         "               por atraccion gravitacional mutua  (def. desactivado)\n"
+        "  -p, -F       Ajusta el tamano exactamente a la pantalla actual\n"
+        "               (pantalla completa)\n"
         "  -h           Muestra esta ayuda y termina\n\n"
         "Controles en ejecucion:\n"
         "  ESC / Q      Salir\n"
@@ -120,15 +122,16 @@ int procesar_argumentos(int argc, char *argv[], Configuracion *config)
     int indice;
 
     /* Valores por defecto */
-    config->malla_n       = MALLA_DEFAULT;
-    config->num_fuentes   = FUENTES_DEFAULT;
-    config->ventana_ancho = VENTANA_ANCHO_DEF;
-    config->ventana_alto  = VENTANA_ALTO_DEF;
-    config->semilla       = (unsigned int)time(NULL);
-    config->dt            = DT_DEFAULT;
-    config->viscosidad    = VISC_DEFAULT;
-    config->difusion      = DIFF_DEFAULT;
-    config->nbody         = 0;
+    config->malla_n           = MALLA_DEFAULT;
+    config->num_fuentes       = FUENTES_DEFAULT;
+    config->ventana_ancho     = VENTANA_ANCHO_DEF;
+    config->ventana_alto      = VENTANA_ALTO_DEF;
+    config->pantalla_completa = 0;
+    config->semilla           = (unsigned int)time(NULL);
+    config->dt                = DT_DEFAULT;
+    config->viscosidad        = VISC_DEFAULT;
+    config->difusion          = DIFF_DEFAULT;
+    config->nbody             = 0;
 
     for (indice = 1; indice < argc; indice++) {
         const char *opcion = argv[indice];
@@ -140,6 +143,12 @@ int procesar_argumentos(int argc, char *argv[], Configuracion *config)
 
         if (strcmp(opcion, "-b") == 0 || strcmp(opcion, "--nbody") == 0) {
             config->nbody = 1;
+            continue;
+        }
+
+        if (strcmp(opcion, "-p") == 0 || strcmp(opcion, "-F") == 0 ||
+            strcmp(opcion, "--fullscreen") == 0 || strcmp(opcion, "--pantalla-completa") == 0) {
+            config->pantalla_completa = 1;
             continue;
         }
 
