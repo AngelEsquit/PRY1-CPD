@@ -88,19 +88,35 @@ int main(int argc, char *argv[])
     malla_n = config.malla_n;   /* fija la resolucion usada por la macro IX() */
     srand(config.semilla);
 
+    /* --- 2. Inicializacion de SDL y deteccion de pantalla ---------------- */
+    if (SDL_Init(SDL_INIT_VIDEO) != 0) {
+        fprintf(stderr, "Error: no se pudo inicializar SDL: %s\n", SDL_GetError());
+        return EXIT_FAILURE;
+    }
+
+    if (config.pantalla_completa) {
+        SDL_DisplayMode dm;
+        if (SDL_GetCurrentDisplayMode(0, &dm) == 0 || SDL_GetDesktopDisplayMode(0, &dm) == 0) {
+            config.ventana_ancho = dm.w;
+            config.ventana_alto  = dm.h;
+        }
+    }
+
     printf("Simulacion de fluidos (Navier-Stokes) - version SECUENCIAL\n");
     printf("  Malla        : %d x %d celdas (%d celdas interiores)\n",
            config.malla_n, config.malla_n, config.malla_n * config.malla_n);
     printf("  Fuentes      : %d\n", config.num_fuentes);
-    printf("  Ventana      : %d x %d px\n",
-           config.ventana_ancho, config.ventana_alto);
+    printf("  Ventana      : %d x %d px%s\n",
+           config.ventana_ancho, config.ventana_alto,
+           config.pantalla_completa ? " (pantalla completa)" : "");
     printf("  Semilla      : %u\n", config.semilla);
     printf("  dt / visc / diff : %.3f / %.5f / %.5f\n",
            (double)config.dt, (double)config.viscosidad, (double)config.difusion);
     printf("  Sistema n-cuerpos: %s\n\n", config.nbody ? "activado" : "desactivado");
 
-    /* --- 2. Memoria de los campos ---------------------------------------- */
+    /* --- 3. Memoria de los campos ---------------------------------------- */
     if (!reservar_campos(&campos, config.malla_n)) {
+        SDL_Quit();
         return EXIT_FAILURE;
     }
 
@@ -108,6 +124,7 @@ int main(int argc, char *argv[])
                                     sizeof(FuenteTinta));
     if (fuentes == NULL) {
         fprintf(stderr, "Error: no se pudo reservar memoria para las fuentes.\n");
+        SDL_Quit();
         liberar_campos(&campos);
         return EXIT_FAILURE;
     }
@@ -117,6 +134,7 @@ int main(int argc, char *argv[])
                                    sizeof(Estrella));
     if (estrellas == NULL) {
         fprintf(stderr, "Error: no se pudo reservar memoria para el fondo.\n");
+        SDL_Quit();
         free(fuentes);
         liberar_campos(&campos);
         return EXIT_FAILURE;
@@ -124,25 +142,28 @@ int main(int argc, char *argv[])
     inicializar_fondo(estrellas, FONDO_ESTRELLAS_CANTIDAD,
                       config.ventana_ancho, config.ventana_alto);
 
-    /* --- 3. Inicializacion de SDL ---------------------------------------- */
-    if (SDL_Init(SDL_INIT_VIDEO) != 0) {
-        fprintf(stderr, "Error: no se pudo inicializar SDL: %s\n", SDL_GetError());
-        codigo_salida = EXIT_FAILURE;
-        goto limpieza;
-    }
-
+    /* --- 4. Creacion de ventana y renderizador --------------------------- */
     /* Filtrado lineal para que la malla escalada no se vea pixelada */
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");
+
+    Uint32 flags_ventana = SDL_WINDOW_SHOWN;
+    if (config.pantalla_completa) {
+        flags_ventana |= SDL_WINDOW_FULLSCREEN_DESKTOP;
+        SDL_ShowCursor(SDL_DISABLE);
+    }
 
     ventana = SDL_CreateWindow("Screensaver de fluidos - secuencial",
                                SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                                config.ventana_ancho, config.ventana_alto,
-                               SDL_WINDOW_SHOWN);
+                               flags_ventana);
     if (ventana == NULL) {
         fprintf(stderr, "Error: no se pudo crear la ventana: %s\n", SDL_GetError());
         codigo_salida = EXIT_FAILURE;
         goto limpieza;
     }
+
+    /* Obtiene el tamano real asignado por SDL */
+    SDL_GetWindowSize(ventana, &config.ventana_ancho, &config.ventana_alto);
 
     renderizador = SDL_CreateRenderer(ventana, -1, SDL_RENDERER_ACCELERATED);
     if (renderizador == NULL) {
