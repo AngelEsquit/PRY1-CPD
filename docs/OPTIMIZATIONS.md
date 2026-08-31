@@ -35,10 +35,11 @@ dt es fijo y el n-body siempre esta activo) y sin fullscreen — no se le sigue
 actualizando a la par de `sequential`. Al comparar FPS entre ramas, tener en
 cuenta que la CLI difiere.
 
-Cuando se cree una rama nueva por cada optimizacion incremental (p.ej.
-`parallel-v1-omp-basico`, `parallel-v2-schedule-tuning`, etc.), agregar una
-fila a la tabla de arriba y una seccion nueva en "Bitacora de optimizaciones"
-mas abajo.
+Las ramas de cada paso incremental ya estan creadas (ver "Roadmap de pasos"
+mas abajo: `rb-tree`, `omp-loops`, `omp-solver`, `schedule-tuning`,
+`collapse-tuning`, encadenadas en ese orden). Si se agrega un paso nuevo
+fuera de esa lista, crear su rama sobre la ultima de la cadena y sumarla
+tambien a esta tabla.
 
 ---
 
@@ -213,41 +214,58 @@ benchmark de rendimiento.
 
 ### Roadmap de pasos (branches)
 
-Ir tachando y anotando la rama real que se creo para cada uno a medida que
-se implementan (no estan implementados todavia, es la lista de que sigue):
+Cada paso es una rama real, ya creada y encadenada sobre la anterior (no
+todas parten de `sequential`: cada una construye sobre el trabajo de la
+rama previa, para que el resultado final acumule todo). Orden y estado:
 
-- [x] **Paso 0 — `sequential`**: baseline. 1 hilo, n-body O(F^2) con fuerza
-      bruta, solver Gauss-Seidel fila por fila. *(este es el punto de
-      partida, ya tiene su propia fila en la tabla maestra)*
-- [ ] **Paso 1 — arbol para n-body (Barnes-Hut)**: reemplazar el loop
-      O(F^2) de `update_nbody_sources()` (`nbody.c`) por un quadtree
+```
+sequential ──▶ rb-tree ──▶ omp-loops ──▶ omp-solver ──▶ schedule-tuning ──▶ collapse-tuning
+```
+
+- [x] **`sequential`** — Paso 0, baseline. 1 hilo, n-body O(F^2) con fuerza
+      bruta, solver Gauss-Seidel fila por fila. *(implementado; punto de
+      partida, ya tiene su propia columna en la tabla maestra)*
+- [ ] **`rb-tree`** — Paso 1, arbol para n-body (Barnes-Hut): reemplazar el
+      loop O(F^2) de `update_nbody_sources()` (`nbody.c`) por un quadtree
       con aproximacion por centro de masa, O(F log F). Sigue siendo
       secuencial (sin OpenMP todavia) — el punto es medir cuanto gana el
       *algoritmo* solo, antes de meterle hilos. Para que el efecto se note
-      hace falta variar `-f` alto (64, 128, 256) ademas de `-n`.
-- [ ] **Paso 2 — paralelizar los loops "faciles"**: los sitios 1, 2, 4, 5, 6
-      del catalogo de arriba (fuente/disipacion/adveccion/proyeccion/
-      render) — todos son `#pragma omp parallel for` directo, sin cambiar
-      el algoritmo. El solver de presion/difusion se queda secuencial
-      todavia (sigue siendo Gauss-Seidel fila por fila).
-- [ ] **Paso 3 — red-black + paralelizar el solver**: el cambio algoritmico
-      del catalogo (seccion 3 de arriba) — se espera que sea el salto mas
-      grande, es el hotspot principal.
-- [ ] **Paso 4 — tuning de `schedule()`**: probar `static`/`dynamic`/
-      `guided` y distintos tamanos de chunk sobre el resultado del paso 3,
-      variando `-n` (mallas chicas vs. grandes reaccionan distinto al
-      overhead de reparto de trabajo).
-- [ ] **Paso 5 — `collapse(2)` si/no**: comparar contra paralelizar solo el
-      loop externo, especialmente relevante en `-n` chico (menos filas que
-      `nproc`).
-- [ ] **Paso 6 (opcional)** — SIMD / autovectorizacion, `-O2` vs `-O3` como
-      variable de build.
+      hace falta variar `-f` alto (64, 128, 256) ademas de `-n`. *(rama
+      creada, vacia — todavia no implementado)*
+- [ ] **`omp-loops`** — Paso 2, paralelizar los loops "faciles": los sitios
+      1, 2, 4, 5, 6 del catalogo de arriba (fuente/disipacion/adveccion/
+      proyeccion/render) — todos son `#pragma omp parallel for` directo,
+      sin cambiar el algoritmo. El solver de presion/difusion se queda
+      secuencial todavia (sigue siendo Gauss-Seidel fila por fila). *(rama
+      creada sobre `rb-tree`, vacia)*
+- [ ] **`omp-solver`** — Paso 3, red-black + paralelizar el solver: el
+      cambio algoritmico del catalogo (seccion 3 de arriba) — se espera que
+      sea el salto mas grande, es el hotspot principal. *(rama creada sobre
+      `omp-loops`, vacia)*
+- [ ] **`schedule-tuning`** — Paso 4, tuning de `schedule()`: probar
+      `static`/`dynamic`/`guided` y distintos tamanos de chunk sobre el
+      resultado del paso 3, variando `-n` (mallas chicas vs. grandes
+      reaccionan distinto al overhead de reparto de trabajo). *(rama creada
+      sobre `omp-solver`, vacia)*
+- [ ] **`collapse-tuning`** — Paso 5, `collapse(2)` si/no: comparar contra
+      paralelizar solo el loop externo, especialmente relevante en `-n`
+      chico (menos filas que `nproc`). *(rama creada sobre
+      `schedule-tuning`, vacia)*
+- [ ] **Paso 6 (opcional, sin rama todavia)** — SIMD / autovectorizacion,
+      `-O2` vs `-O3` como variable de build. Crear la rama sobre
+      `collapse-tuning` cuando se llegue a este punto.
 
-`parallel-omp` (la rama congelada) ya tiene implementados los pasos 2 y 3
-juntos (mas los cambios visuales de resolucion/fondo/render que no son
-parte de este roadmap de performance) — sirve como referencia de "a donde
-se puede llegar", pero el roadmap de arriba se construye de nuevo, paso por
-paso, desde `sequential`, para poder medir cada incremento por separado.
+`parallel-omp` (la rama congelada, fuera de esta cadena) ya tiene
+implementados los pasos 2 y 3 juntos (mas los cambios visuales de
+resolucion/fondo/render que no son parte de este roadmap de performance) —
+sirve como referencia de "a donde se puede llegar", pero la cadena de arriba
+se construye de nuevo, paso por paso, para poder medir cada incremento por
+separado.
+
+Flujo de trabajo por paso: `git checkout <rama-del-paso>`, implementar,
+correr la bateria de benchmark completa (ver mas abajo), pegar resultados en
+la tabla maestra, commit, marcar el checkbox de arriba. El siguiente paso ya
+esta creado sobre este y listo para hacer checkout en cuanto se termine.
 
 ---
 
@@ -280,7 +298,7 @@ paso, desde `sequential`, para poder medir cada incremento por separado.
 
 Repetir esta misma matriz completa despues de cada paso del roadmap y pegar
 los resultados en la tabla maestra de abajo (agregar mas filas de matriz
-si algun paso lo amerita, p.ej. mas hilos una vez que haya OpenMP):
+si algun paso lo amerita, p.ej. mas hilos una vez que haya OpenMP).
 
 | # | `-n` | `-f` | Hilos | Por que esta en la matriz |
 |---|------|------|-------|------------------------------|
@@ -292,9 +310,65 @@ si algun paso lo amerita, p.ej. mas hilos una vez que haya OpenMP):
 | F | 256  | 64   | 1     | muchas fuentes/cuerpos, resalta el costo O(F^2)/O(F log F) del n-body |
 | G | 256  | 256  | 1     | limite superior de fuentes/cuerpos |
 
-A partir del Paso 2 (cuando ya hay OpenMP), repetir tambien B con
-`OMP_NUM_THREADS` en `{1, 2, 4, 8, 16, 20}` para tener la curva de
-escalabilidad de ese paso.
+#### Comandos (copiar/pegar tal cual, un paso a la vez)
+
+Parado en la rama del paso que se esta midiendo, con el binario ya
+compilado (`make`):
+
+```bash
+# Fila A (n=64, f=6)
+timeout 30s ./ss -n 64 -f 6 -s 42 2>/dev/null | grep "FPS=" | tail -n +6 \
+  | awk -F'= ' '{s+=$2; c++} END {printf "A  n=64   f=6   -> %.2f FPS\n", s/c}'
+
+# Fila B (n=256, f=6) -- default del programa
+timeout 30s ./ss -n 256 -f 6 -s 42 2>/dev/null | grep "FPS=" | tail -n +6 \
+  | awk -F'= ' '{s+=$2; c++} END {printf "B  n=256  f=6   -> %.2f FPS\n", s/c}'
+
+# Fila C (n=512, f=6)
+timeout 30s ./ss -n 512 -f 6 -s 42 2>/dev/null | grep "FPS=" | tail -n +6 \
+  | awk -F'= ' '{s+=$2; c++} END {printf "C  n=512  f=6   -> %.2f FPS\n", s/c}'
+
+# Fila D (n=1024, f=6)
+timeout 30s ./ss -n 1024 -f 6 -s 42 2>/dev/null | grep "FPS=" | tail -n +6 \
+  | awk -F'= ' '{s+=$2; c++} END {printf "D  n=1024 f=6   -> %.2f FPS\n", s/c}'
+
+# Fila E (n=256, f=4)
+timeout 30s ./ss -n 256 -f 4 -s 42 2>/dev/null | grep "FPS=" | tail -n +6 \
+  | awk -F'= ' '{s+=$2; c++} END {printf "E  n=256  f=4   -> %.2f FPS\n", s/c}'
+
+# Fila F (n=256, f=64)
+timeout 30s ./ss -n 256 -f 64 -s 42 2>/dev/null | grep "FPS=" | tail -n +6 \
+  | awk -F'= ' '{s+=$2; c++} END {printf "F  n=256  f=64  -> %.2f FPS\n", s/c}'
+
+# Fila G (n=256, f=256)
+timeout 30s ./ss -n 256 -f 256 -s 42 2>/dev/null | grep "FPS=" | tail -n +6 \
+  | awk -F'= ' '{s+=$2; c++} END {printf "G  n=256  f=256 -> %.2f FPS\n", s/c}'
+```
+
+O la matriz completa de un tiron (mismo orden, imprime las 7 lineas
+seguidas para pegar directo en la tabla maestra):
+
+```bash
+for row in "A 64 6" "B 256 6" "C 512 6" "D 1024 6" "E 256 4" "F 256 64" "G 256 256"; do
+  set -- $row
+  label=$1; n=$2; f=$3
+  timeout 30s ./ss -n "$n" -f "$f" -s 42 2>/dev/null | grep "FPS=" | tail -n +6 \
+    | awk -v l="$label" -v n="$n" -v f="$f" -F'= ' \
+      '{s+=$2; c++} END {printf "%s  n=%-5s f=%-4s -> %.2f FPS\n", l, n, f, s/c}'
+done
+```
+
+A partir del Paso 2 (`omp-loops` en adelante, cuando ya hay OpenMP), repetir
+tambien la fila B variando `OMP_NUM_THREADS` para la curva de
+escalabilidad:
+
+```bash
+for t in 1 2 4 8 16 20; do
+  OMP_NUM_THREADS=$t timeout 30s ./ss -n 256 -f 6 -s 42 2>/dev/null \
+    | grep "FPS=" | tail -n +6 \
+    | awk -v t="$t" -F'= ' '{s+=$2; c++} END {printf "hilos=%-2s -> %.2f FPS\n", t, s/c}'
+done
+```
 
 ---
 
@@ -303,37 +377,43 @@ escalabilidad de ese paso.
 FPS promedio por combinacion de fila-de-matriz x paso. Ir agregando una
 columna por cada paso conforme se implementa y se corre la bateria.
 
-| Fila matriz | Paso 0 `sequential` | Paso 1 (arbol n-body) | Paso 2 (omp loops faciles) | Paso 3 (+ solver red-black) | ... |
-|---|---|---|---|---|---|
-| A (n=64, f=6) | | | | | |
-| B (n=256, f=6) | | | | | |
-| C (n=512, f=6) | | | | | |
-| D (n=1024, f=6) | | | | | |
-| E (n=256, f=4) | | | | | |
-| F (n=256, f=64) | | | | | |
-| G (n=256, f=256) | | | | | |
+| Fila matriz | `sequential` | `rb-tree` | `omp-loops` | `omp-solver` | `schedule-tuning` | `collapse-tuning` |
+|---|---|---|---|---|---|---|
+| A (n=64, f=6) | | | | | | |
+| B (n=256, f=6) | | | | | | |
+| C (n=512, f=6) | | | | | | |
+| D (n=1024, f=6) | | | | | | |
+| E (n=256, f=4) | | | | | | |
+| F (n=256, f=64) | | | | | | |
+| G (n=256, f=256) | | | | | | |
 
 ### Curva de escalabilidad por hilos (desde el Paso 2 en adelante)
 
 Usar la fila B (n=256, f=6) como referencia, variando `OMP_NUM_THREADS`:
 
-| Hilos | FPS Paso 2 | FPS Paso 3 | ... |
-|-------|------------|------------|-----|
-| 1     |            |            |     |
-| 2     |            |            |     |
-| 4     |            |            |     |
-| 8     |            |            |     |
-| 16    |            |            |     |
-| 20    |            |            |     |
+| Hilos | FPS `omp-loops` | FPS `omp-solver` | FPS `schedule-tuning` | FPS `collapse-tuning` |
+|-------|------------------|-------------------|-------------------------|--------------------------|
+| 1     |                  |                   |                         |                          |
+| 2     |                  |                   |                         |                          |
+| 4     |                  |                   |                         |                          |
+| 8     |                  |                   |                         |                          |
+| 16    |                  |                   |                         |                          |
+| 20    |                  |                   |                         |                          |
 
 ---
 
 ## Como correr una comparacion rapida entre ramas
 
-```bash
-git checkout sequential  && make clean && make && \
-  timeout 20s ./ss -n 256 -f 6 -s 42 2>/dev/null | grep "FPS=" | tail -n +5
+Recorre toda la cadena del roadmap (las que ya tengan commits mas alla del
+punto donde se crearon daran resultados; las que siguen vacias daran el
+mismo numero que su padre, eso es esperado):
 
-git checkout parallel-omp && make clean && make && \
-  timeout 20s ./ss -n 256 -f 6 -s 42 2>/dev/null | grep "FPS=" | tail -n +5
+```bash
+for branch in sequential rb-tree omp-loops omp-solver schedule-tuning collapse-tuning parallel-omp; do
+  git checkout "$branch" >/dev/null 2>&1 && make clean >/dev/null && make >/dev/null 2>&1 && \
+    printf "%-18s" "$branch" && \
+    timeout 20s ./ss -n 256 -f 6 -s 42 2>/dev/null | grep "FPS=" | tail -n +5 \
+      | awk -F'= ' '{s+=$2; c++} END {printf "%.2f FPS\n", s/c}'
+done
+git checkout sequential >/dev/null 2>&1
 ```
