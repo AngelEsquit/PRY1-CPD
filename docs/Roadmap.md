@@ -304,64 +304,37 @@ si algun paso lo amerita, p.ej. mas hilos una vez que haya OpenMP).
 
 | # | `-n` | `-f` | Hilos | Por que esta en la matriz |
 |---|------|------|-------|------------------------------|
-| A | 64   | 6    | 1     | malla chica, referencia rapida |
-| B | 256  | 6    | 1     | default del programa |
-| C | 512  | 6    | 1     | malla grande, domina el solver |
-| H | 600  | 6    | 1     | rango donde se observo ~20-30 FPS en pruebas anteriores |
-| I | 700  | 6    | 1     | idem, extremo superior de ese mismo rango |
-| D | 1024 | 6    | 1     | malla muy grande, limite superior |
-| E | 256  | 4    | 1     | pocas fuentes/cuerpos |
-| F | 256  | 64   | 1     | muchas fuentes/cuerpos, resalta el costo O(F^2)/O(F log F) del n-body |
-| G | 256  | 256  | 1     | limite superior de fuentes/cuerpos |
+| A6  | 64   | 6    | 1     | malla chica, referencia rapida |
+| A12 | 64   | 12   | 1     | idem, con el doble de fuentes/cuerpos |
+| B6  | 256  | 6    | 1     | default del programa |
+| B12 | 256  | 12   | 1     | idem, con el doble de fuentes/cuerpos |
+| C6  | 512  | 6    | 1     | malla grande, domina el solver |
+| C12 | 512  | 12   | 1     | idem, con el doble de fuentes/cuerpos |
+| H6  | 600  | 6    | 1     | rango donde se observo ~20-30 FPS en pruebas anteriores |
+| H12 | 600  | 12   | 1     | idem, con el doble de fuentes/cuerpos |
+| I6  | 700  | 6    | 1     | idem, extremo superior de ese mismo rango |
+| I12 | 700  | 12   | 1     | idem, con el doble de fuentes/cuerpos |
+| D6  | 1024 | 6    | 1     | malla muy grande, limite superior |
+| D12 | 1024 | 12   | 1     | idem, con el doble de fuentes/cuerpos |
+| E   | 256  | 4    | 1     | pocas fuentes/cuerpos |
+| F   | 256  | 64   | 1     | muchas fuentes/cuerpos, resalta el costo O(F^2)/O(F log F) del n-body |
+| G   | 256  | 256  | 1     | limite superior de fuentes/cuerpos |
 
 #### Comandos (copiar/pegar tal cual, un paso a la vez)
 
 Parado en la rama del paso que se esta midiendo, con el binario ya
 compilado (`make`):
 
-```bash
-# Fila A (n=64, f=6)
-timeout 30s ./ss -n 64 -f 6 -s 42 2>/dev/null | grep "FPS=" | tail -n +6 \
-  | awk -F'= ' '{s+=$2; c++} END {printf "A  n=64   f=6   -> %.2f FPS\n", s/c}'
-
-# Fila B (n=256, f=6) -- default del programa
-timeout 30s ./ss -n 256 -f 6 -s 42 2>/dev/null | grep "FPS=" | tail -n +6 \
-  | awk -F'= ' '{s+=$2; c++} END {printf "B  n=256  f=6   -> %.2f FPS\n", s/c}'
-
-# Fila C (n=512, f=6)
-timeout 30s ./ss -n 512 -f 6 -s 42 2>/dev/null | grep "FPS=" | tail -n +6 \
-  | awk -F'= ' '{s+=$2; c++} END {printf "C  n=512  f=6   -> %.2f FPS\n", s/c}'
-
-# Fila H (n=600, f=6)
-timeout 30s ./ss -n 600 -f 6 -s 42 2>/dev/null | grep "FPS=" | tail -n +6 \
-  | awk -F'= ' '{s+=$2; c++} END {printf "H  n=600  f=6   -> %.2f FPS\n", s/c}'
-
-# Fila I (n=700, f=6)
-timeout 30s ./ss -n 700 -f 6 -s 42 2>/dev/null | grep "FPS=" | tail -n +6 \
-  | awk -F'= ' '{s+=$2; c++} END {printf "I  n=700  f=6   -> %.2f FPS\n", s/c}'
-
-# Fila D (n=1024, f=6)
-timeout 30s ./ss -n 1024 -f 6 -s 42 2>/dev/null | grep "FPS=" | tail -n +6 \
-  | awk -F'= ' '{s+=$2; c++} END {printf "D  n=1024 f=6   -> %.2f FPS\n", s/c}'
-
-# Fila E (n=256, f=4)
-timeout 30s ./ss -n 256 -f 4 -s 42 2>/dev/null | grep "FPS=" | tail -n +6 \
-  | awk -F'= ' '{s+=$2; c++} END {printf "E  n=256  f=4   -> %.2f FPS\n", s/c}'
-
-# Fila F (n=256, f=64)
-timeout 30s ./ss -n 256 -f 64 -s 42 2>/dev/null | grep "FPS=" | tail -n +6 \
-  | awk -F'= ' '{s+=$2; c++} END {printf "F  n=256  f=64  -> %.2f FPS\n", s/c}'
-
-# Fila G (n=256, f=256)
-timeout 30s ./ss -n 256 -f 256 -s 42 2>/dev/null | grep "FPS=" | tail -n +6 \
-  | awk -F'= ' '{s+=$2; c++} END {printf "G  n=256  f=256 -> %.2f FPS\n", s/c}'
-```
-
-O la matriz completa de un tiron (mismo orden, imprime las 7 lineas
-seguidas para pegar directo en la tabla maestra):
+La matriz completa (15 filas) de un tiron, imprime una linea por fila,
+listo para pegar en la tabla maestra. **Esto SI corre el benchmark
+automaticamente** (compila una vez, corre cada configuracion 30s, promedia
+el FPS), pero **no escribe en este archivo**: hay que copiar las lineas
+impresas a mano a la tabla de abajo.
 
 ```bash
-for row in "A 64 6" "B 256 6" "C 512 6" "H 600 6" "I 700 6" "D 1024 6" "E 256 4" "F 256 64" "G 256 256"; do
+for row in "A6 64 6" "A12 64 12" "B6 256 6" "B12 256 12" "C6 512 6" "C12 512 12" \
+           "H6 600 6" "H12 600 12" "I6 700 6" "I12 700 12" "D6 1024 6" "D12 1024 12" \
+           "E 256 4" "F 256 64" "G 256 256"; do
   set -- $row
   label=$1; n=$2; f=$3
   timeout 30s ./ss -n "$n" -f "$f" -s 42 2>/dev/null | grep "FPS=" | tail -n +6 \
@@ -391,12 +364,18 @@ columna por cada paso conforme se implementa y se corre la bateria.
 
 | Fila matriz | `sequential` | `01-rb-tree` | `02-omp-loops` | `03-omp-solver` | `04-schedule-tuning` | `05-collapse-tuning` |
 |---|---|---|---|---|---|---|
-| A (n=64, f=6) | | | | | | |
-| B (n=256, f=6) | | | | | | |
-| C (n=512, f=6) | | | | | | |
-| H (n=600, f=6) | | | | | | |
-| I (n=700, f=6) | | | | | | |
-| D (n=1024, f=6) | | | | | | |
+| A6 (n=64, f=6) | | | | | | |
+| A12 (n=64, f=12) | | | | | | |
+| B6 (n=256, f=6) | | | | | | |
+| B12 (n=256, f=12) | | | | | | |
+| C6 (n=512, f=6) | | | | | | |
+| C12 (n=512, f=12) | | | | | | |
+| H6 (n=600, f=6) | | | | | | |
+| H12 (n=600, f=12) | | | | | | |
+| I6 (n=700, f=6) | | | | | | |
+| I12 (n=700, f=12) | | | | | | |
+| D6 (n=1024, f=6) | | | | | | |
+| D12 (n=1024, f=12) | | | | | | |
 | E (n=256, f=4) | | | | | | |
 | F (n=256, f=64) | | | | | | |
 | G (n=256, f=256) | | | | | | |

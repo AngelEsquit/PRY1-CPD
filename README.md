@@ -10,7 +10,7 @@ under a mutual-gravity n-body system.
 
 This is the **sequential version**, which serves as the comparison baseline
 for measuring speedup and efficiency of the OpenMP parallel version (see
-`docs/OPTIMIZATIONS.md` for the parallelization plan and benchmark results).
+`docs/Roadmap.md` for the parallelization plan and benchmark results).
 
 ---
 
@@ -142,7 +142,7 @@ The `advect`, `add_source`, `dissipate_ink` operators and the loops inside
 `project` (outside the solver) **are** directly parallelizable, since each
 cell only writes to its own position.
 
-See `docs/OPTIMIZATIONS.md` for the actual step-by-step parallelization plan
+See `docs/Roadmap.md` for the actual step-by-step parallelization plan
 and benchmark results as they're filled in.
 
 ---
