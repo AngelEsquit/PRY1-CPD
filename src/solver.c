@@ -3,224 +3,225 @@
 #include "utils.h"
 
 /*
- * Aplica las condiciones de frontera sobre el anillo de celdas fantasma.
- *   tipo_borde = BND_ESCALAR -> el borde copia al vecino interior (Neumann)
- *   tipo_borde = BND_VEL_X   -> se invierte la componente x en muros verticales
- *   tipo_borde = BND_VEL_Y   -> se invierte la componente y en muros horizontales
- * Invertir el signo equivale a un muro solido: el fluido rebota en lugar de
- * atravesar la pared.
+ * Applies the boundary conditions over the ring of ghost cells.
+ *   bnd_type = BND_SCALAR -> the border copies the interior neighbor (Neumann)
+ *   bnd_type = BND_VEL_X  -> the x component is inverted at vertical walls
+ *   bnd_type = BND_VEL_Y  -> the y component is inverted at horizontal walls
+ * Inverting the sign is equivalent to a solid wall: the fluid bounces
+ * instead of passing through it.
  */
-static void aplicar_frontera(int tipo_borde, float *campo)
+static void apply_boundary(int bnd_type, float *field)
 {
     int i;
 
-    for (i = 1; i <= malla_n; i++) {
-        campo[IX(0, i)]           = (tipo_borde == BND_VEL_X)
-                                    ? -campo[IX(1, i)]       : campo[IX(1, i)];
-        campo[IX(malla_n + 1, i)] = (tipo_borde == BND_VEL_X)
-                                    ? -campo[IX(malla_n, i)] : campo[IX(malla_n, i)];
-        campo[IX(i, 0)]           = (tipo_borde == BND_VEL_Y)
-                                    ? -campo[IX(i, 1)]       : campo[IX(i, 1)];
-        campo[IX(i, malla_n + 1)] = (tipo_borde == BND_VEL_Y)
-                                    ? -campo[IX(i, malla_n)] : campo[IX(i, malla_n)];
+    for (i = 1; i <= grid_n; i++) {
+        field[IX(0, i)]         = (bnd_type == BND_VEL_X)
+                                  ? -field[IX(1, i)]      : field[IX(1, i)];
+        field[IX(grid_n + 1, i)] = (bnd_type == BND_VEL_X)
+                                  ? -field[IX(grid_n, i)] : field[IX(grid_n, i)];
+        field[IX(i, 0)]         = (bnd_type == BND_VEL_Y)
+                                  ? -field[IX(i, 1)]      : field[IX(i, 1)];
+        field[IX(i, grid_n + 1)] = (bnd_type == BND_VEL_Y)
+                                  ? -field[IX(i, grid_n)] : field[IX(i, grid_n)];
     }
 
-    /* Las cuatro esquinas se promedian a partir de sus dos vecinos */
-    campo[IX(0, 0)] = 0.5f * (campo[IX(1, 0)] + campo[IX(0, 1)]);
-    campo[IX(0, malla_n + 1)] =
-        0.5f * (campo[IX(1, malla_n + 1)] + campo[IX(0, malla_n)]);
-    campo[IX(malla_n + 1, 0)] =
-        0.5f * (campo[IX(malla_n, 0)] + campo[IX(malla_n + 1, 1)]);
-    campo[IX(malla_n + 1, malla_n + 1)] =
-        0.5f * (campo[IX(malla_n, malla_n + 1)] + campo[IX(malla_n + 1, malla_n)]);
+    /* The four corners are averaged from their two neighbors */
+    field[IX(0, 0)] = 0.5f * (field[IX(1, 0)] + field[IX(0, 1)]);
+    field[IX(0, grid_n + 1)] =
+        0.5f * (field[IX(1, grid_n + 1)] + field[IX(0, grid_n)]);
+    field[IX(grid_n + 1, 0)] =
+        0.5f * (field[IX(grid_n, 0)] + field[IX(grid_n + 1, 1)]);
+    field[IX(grid_n + 1, grid_n + 1)] =
+        0.5f * (field[IX(grid_n, grid_n + 1)] + field[IX(grid_n + 1, grid_n)]);
 }
 
 /*
- * Suma al campo destino las contribuciones del campo fuente escaladas por dt.
- * Es el operador de fuerzas externas / inyeccion de tinta.
+ * Adds the source field's contributions, scaled by dt, into the destination
+ * field. This is the external-forces / ink-injection operator.
  */
-static void agregar_fuente(float *destino, const float *fuente, float dt,
-                           int celdas_total)
+static void add_source(float *dest, const float *source, float dt,
+                       int total_cells)
 {
     int i;
-    for (i = 0; i < celdas_total; i++) {
-        destino[i] += dt * fuente[i];
+    for (i = 0; i < total_cells; i++) {
+        dest[i] += dt * source[i];
     }
 }
 
 /*
- * Resuelve el sistema lineal disperso   x = (x0 + a * suma_vecinos) / c
- * mediante relajacion de Gauss-Seidel.
+ * Solves the sparse linear system   x = (x0 + a * neighbor_sum) / c
+ * via Gauss-Seidel relaxation.
  *
- * NOTA IMPORTANTE PARA LA VERSION PARALELA:
- * Gauss-Seidel usa los valores ya actualizados de la misma iteracion, lo que
- * crea una dependencia de datos entre celdas vecinas y hace que este ciclo NO
- * sea directamente paralelizable. En la version con OpenMP se sustituye por
- * Jacobi (que lee de un buffer separado y por tanto no tiene dependencias) o
- * por un recorrido red-black. Aqui se conserva Gauss-Seidel por ser el metodo
- * secuencial de referencia y el que converge mas rapido por iteracion.
+ * IMPORTANT NOTE FOR THE PARALLEL VERSION:
+ * Gauss-Seidel uses values already updated within the same iteration,
+ * which creates a data dependency between neighboring cells and makes this
+ * loop NOT directly parallelizable. The OpenMP version replaces it with
+ * Jacobi (which reads from a separate buffer and therefore has no
+ * dependencies) or with a red-black sweep. Gauss-Seidel is kept here as the
+ * sequential reference method, and the one that converges fastest per
+ * iteration.
  */
-static void resolver_lineal(int tipo_borde, float *campo, const float *campo_previo,
-                            float a, float c)
+static void solve_linear(int bnd_type, float *field, const float *field_prev,
+                         float a, float c)
 {
-    int iteracion, i, j;
-    const float inverso_c = 1.0f / c;
+    int iter, i, j;
+    const float inv_c = 1.0f / c;
 
-    for (iteracion = 0; iteracion < ITER_GAUSS_SEIDEL; iteracion++) {
-        for (j = 1; j <= malla_n; j++) {
-            for (i = 1; i <= malla_n; i++) {
-                campo[IX(i, j)] = (campo_previo[IX(i, j)] +
-                                   a * (campo[IX(i - 1, j)] + campo[IX(i + 1, j)] +
-                                        campo[IX(i, j - 1)] + campo[IX(i, j + 1)]))
-                                  * inverso_c;
+    for (iter = 0; iter < GAUSS_SEIDEL_ITERS; iter++) {
+        for (j = 1; j <= grid_n; j++) {
+            for (i = 1; i <= grid_n; i++) {
+                field[IX(i, j)] = (field_prev[IX(i, j)] +
+                                   a * (field[IX(i - 1, j)] + field[IX(i + 1, j)] +
+                                        field[IX(i, j - 1)] + field[IX(i, j + 1)]))
+                                  * inv_c;
             }
         }
-        aplicar_frontera(tipo_borde, campo);
+        apply_boundary(bnd_type, field);
     }
 }
 
 /*
- * Difusion implicita: resuelve  x - a*lap(x) = x0,  con a = dt*coef*N*N.
- * El esquema implicito es incondicionalmente estable (esa es la clave del
- * metodo de Stam frente a una difusion explicita).
+ * Implicit diffusion: solves  x - a*lap(x) = x0,  with a = dt*coef*N*N.
+ * The implicit scheme is unconditionally stable (that's the key to Stam's
+ * method, as opposed to explicit diffusion).
  */
-static void difundir(int tipo_borde, float *campo, const float *campo_previo,
-                     float coeficiente, float dt)
+static void diffuse(int bnd_type, float *field, const float *field_prev,
+                    float coefficient, float dt)
 {
-    const float a = dt * coeficiente * (float)malla_n * (float)malla_n;
-    resolver_lineal(tipo_borde, campo, campo_previo, a, 1.0f + 4.0f * a);
+    const float a = dt * coefficient * (float)grid_n * (float)grid_n;
+    solve_linear(bnd_type, field, field_prev, a, 1.0f + 4.0f * a);
 }
 
 /*
- * Adveccion semi-Lagrangiana: para cada celda se retrocede en el tiempo
- * siguiendo el campo de velocidad y se interpola bilinealmente el valor del
- * campo en la posicion de origen. Este esquema tambien es incondicionalmente
- * estable, sin importar la magnitud de la velocidad.
+ * Semi-Lagrangian advection: for each cell, trace backward in time along
+ * the velocity field and bilinearly interpolate the field's value at the
+ * origin position. This scheme is also unconditionally stable, regardless
+ * of velocity magnitude.
  */
-static void advectar(int tipo_borde, float *campo, const float *campo_previo,
-                     const float *vel_x, const float *vel_y, float dt)
+static void advect(int bnd_type, float *field, const float *field_prev,
+                   const float *vel_x, const float *vel_y, float dt)
 {
     int   i, j, i0, i1, j0, j1;
-    float origen_x, origen_y;
-    float peso_i1, peso_i0, peso_j1, peso_j0;
-    const float dt_malla = dt * (float)malla_n;
-    const float limite   = (float)malla_n + 0.5f;
+    float origin_x, origin_y;
+    float weight_i1, weight_i0, weight_j1, weight_j0;
+    const float dt_grid = dt * (float)grid_n;
+    const float limit   = (float)grid_n + 0.5f;
 
-    for (j = 1; j <= malla_n; j++) {
-        for (i = 1; i <= malla_n; i++) {
-            /* Trazado hacia atras de la particula que llega a (i,j) */
-            origen_x = (float)i - dt_malla * vel_x[IX(i, j)];
-            origen_y = (float)j - dt_malla * vel_y[IX(i, j)];
+    for (j = 1; j <= grid_n; j++) {
+        for (i = 1; i <= grid_n; i++) {
+            /* Backward trace of the particle arriving at (i,j) */
+            origin_x = (float)i - dt_grid * vel_x[IX(i, j)];
+            origin_y = (float)j - dt_grid * vel_y[IX(i, j)];
 
-            /* Se acota el origen al dominio para no leer fuera del arreglo */
-            origen_x = acotar(origen_x, 0.5f, limite);
-            origen_y = acotar(origen_y, 0.5f, limite);
+            /* Clamp the origin to the domain to avoid reading out of bounds */
+            origin_x = clamp(origin_x, 0.5f, limit);
+            origin_y = clamp(origin_y, 0.5f, limit);
 
-            i0 = (int)origen_x;  i1 = i0 + 1;
-            j0 = (int)origen_y;  j1 = j0 + 1;
+            i0 = (int)origin_x;  i1 = i0 + 1;
+            j0 = (int)origin_y;  j1 = j0 + 1;
 
-            /* Pesos de la interpolacion bilineal */
-            peso_i1 = origen_x - (float)i0;  peso_i0 = 1.0f - peso_i1;
-            peso_j1 = origen_y - (float)j0;  peso_j0 = 1.0f - peso_j1;
+            /* Bilinear interpolation weights */
+            weight_i1 = origin_x - (float)i0;  weight_i0 = 1.0f - weight_i1;
+            weight_j1 = origin_y - (float)j0;  weight_j0 = 1.0f - weight_j1;
 
-            campo[IX(i, j)] =
-                peso_i0 * (peso_j0 * campo_previo[IX(i0, j0)] +
-                           peso_j1 * campo_previo[IX(i0, j1)]) +
-                peso_i1 * (peso_j0 * campo_previo[IX(i1, j0)] +
-                           peso_j1 * campo_previo[IX(i1, j1)]);
+            field[IX(i, j)] =
+                weight_i0 * (weight_j0 * field_prev[IX(i0, j0)] +
+                             weight_j1 * field_prev[IX(i0, j1)]) +
+                weight_i1 * (weight_j0 * field_prev[IX(i1, j0)] +
+                             weight_j1 * field_prev[IX(i1, j1)]);
         }
     }
 
-    aplicar_frontera(tipo_borde, campo);
+    apply_boundary(bnd_type, field);
 }
 
 /*
- * Proyeccion de Hodge: descompone el campo de velocidad en una parte sin
- * divergencia mas el gradiente de un campo de presion, y se queda solo con la
- * primera. Esto impone la condicion de incompresibilidad div(u) = 0 y es lo
- * que produce los remolinos caracteristicos del fluido.
+ * Hodge projection: decomposes the velocity field into a divergence-free
+ * part plus the gradient of a pressure field, and keeps only the former.
+ * This enforces the incompressibility condition div(u) = 0, and is what
+ * produces the fluid's characteristic swirls.
  */
-static void proyectar(float *vel_x, float *vel_y, float *presion,
-                      float *divergencia)
+static void project(float *vel_x, float *vel_y, float *pressure,
+                    float *divergence)
 {
     int i, j;
-    const float h = 1.0f / (float)malla_n;
+    const float h = 1.0f / (float)grid_n;
 
-    /* 1. Calcular la divergencia del campo de velocidad */
-    for (j = 1; j <= malla_n; j++) {
-        for (i = 1; i <= malla_n; i++) {
-            divergencia[IX(i, j)] = -0.5f * h *
+    /* 1. Compute the divergence of the velocity field */
+    for (j = 1; j <= grid_n; j++) {
+        for (i = 1; i <= grid_n; i++) {
+            divergence[IX(i, j)] = -0.5f * h *
                 (vel_x[IX(i + 1, j)] - vel_x[IX(i - 1, j)] +
                  vel_y[IX(i, j + 1)] - vel_y[IX(i, j - 1)]);
-            presion[IX(i, j)] = 0.0f;
+            pressure[IX(i, j)] = 0.0f;
         }
     }
-    aplicar_frontera(BND_ESCALAR, divergencia);
-    aplicar_frontera(BND_ESCALAR, presion);
+    apply_boundary(BND_SCALAR, divergence);
+    apply_boundary(BND_SCALAR, pressure);
 
-    /* 2. Resolver la ecuacion de Poisson  lap(p) = div(u) */
-    resolver_lineal(BND_ESCALAR, presion, divergencia, 1.0f, 4.0f);
+    /* 2. Solve the Poisson equation  lap(p) = div(u) */
+    solve_linear(BND_SCALAR, pressure, divergence, 1.0f, 4.0f);
 
-    /* 3. Restar el gradiente de presion a la velocidad */
-    for (j = 1; j <= malla_n; j++) {
-        for (i = 1; i <= malla_n; i++) {
+    /* 3. Subtract the pressure gradient from the velocity */
+    for (j = 1; j <= grid_n; j++) {
+        for (i = 1; i <= grid_n; i++) {
             vel_x[IX(i, j)] -= 0.5f *
-                (presion[IX(i + 1, j)] - presion[IX(i - 1, j)]) / h;
+                (pressure[IX(i + 1, j)] - pressure[IX(i - 1, j)]) / h;
             vel_y[IX(i, j)] -= 0.5f *
-                (presion[IX(i, j + 1)] - presion[IX(i, j - 1)]) / h;
+                (pressure[IX(i, j + 1)] - pressure[IX(i, j - 1)]) / h;
         }
     }
-    aplicar_frontera(BND_VEL_X, vel_x);
-    aplicar_frontera(BND_VEL_Y, vel_y);
+    apply_boundary(BND_VEL_X, vel_x);
+    apply_boundary(BND_VEL_Y, vel_y);
 }
 
-/* Intercambia dos punteros a campo (evita copiar arreglos completos). */
-static void intercambiar(float **campo_a, float **campo_b)
+/* Swaps two field pointers (avoids copying whole arrays). */
+static void swap_fields(float **field_a, float **field_b)
 {
-    float *temporal = *campo_a;
-    *campo_a = *campo_b;
-    *campo_b = temporal;
-}
-
-/*
- * Paso completo de la densidad de tinta de un canal:
- * fuente -> difusion -> adveccion.
- */
-void paso_tinta(float **tinta, float **tinta_previa,
-               const float *vel_x, const float *vel_y,
-               float difusion, float dt, int celdas_total)
-{
-    agregar_fuente(*tinta, *tinta_previa, dt, celdas_total);
-    intercambiar(tinta_previa, tinta);
-    difundir(BND_ESCALAR, *tinta, *tinta_previa, difusion, dt);
-    intercambiar(tinta_previa, tinta);
-    advectar(BND_ESCALAR, *tinta, *tinta_previa, vel_x, vel_y, dt);
+    float *tmp = *field_a;
+    *field_a = *field_b;
+    *field_b = tmp;
 }
 
 /*
- * Paso completo del campo de velocidad:
- * fuerzas -> difusion viscosa -> proyeccion -> autoadveccion -> proyeccion.
- * Se proyecta dos veces porque tanto la difusion como la adveccion vuelven a
- * introducir divergencia en el campo.
+ * Full step of one channel's ink density:
+ * source -> diffusion -> advection.
  */
-void paso_velocidad(CamposFluido *campos, float viscosidad, float dt)
+void ink_step(float **ink, float **ink_prev,
+             const float *vel_x, const float *vel_y,
+             float diffusion, float dt, int total_cells)
 {
-    agregar_fuente(campos->vel_x, campos->vel_x_p, dt, campos->celdas_total);
-    agregar_fuente(campos->vel_y, campos->vel_y_p, dt, campos->celdas_total);
+    add_source(*ink, *ink_prev, dt, total_cells);
+    swap_fields(ink_prev, ink);
+    diffuse(BND_SCALAR, *ink, *ink_prev, diffusion, dt);
+    swap_fields(ink_prev, ink);
+    advect(BND_SCALAR, *ink, *ink_prev, vel_x, vel_y, dt);
+}
 
-    intercambiar(&campos->vel_x_p, &campos->vel_x);
-    difundir(BND_VEL_X, campos->vel_x, campos->vel_x_p, viscosidad, dt);
-    intercambiar(&campos->vel_y_p, &campos->vel_y);
-    difundir(BND_VEL_Y, campos->vel_y, campos->vel_y_p, viscosidad, dt);
+/*
+ * Full step of the velocity field:
+ * forces -> viscous diffusion -> projection -> self-advection -> projection.
+ * It's projected twice because both diffusion and advection reintroduce
+ * divergence into the field.
+ */
+void velocity_step(FluidFields *fields, float viscosity, float dt)
+{
+    add_source(fields->vel_x, fields->vel_x_p, dt, fields->total_cells);
+    add_source(fields->vel_y, fields->vel_y_p, dt, fields->total_cells);
 
-    proyectar(campos->vel_x, campos->vel_y, campos->presion, campos->divergencia);
+    swap_fields(&fields->vel_x_p, &fields->vel_x);
+    diffuse(BND_VEL_X, fields->vel_x, fields->vel_x_p, viscosity, dt);
+    swap_fields(&fields->vel_y_p, &fields->vel_y);
+    diffuse(BND_VEL_Y, fields->vel_y, fields->vel_y_p, viscosity, dt);
 
-    intercambiar(&campos->vel_x_p, &campos->vel_x);
-    intercambiar(&campos->vel_y_p, &campos->vel_y);
-    advectar(BND_VEL_X, campos->vel_x, campos->vel_x_p,
-             campos->vel_x_p, campos->vel_y_p, dt);
-    advectar(BND_VEL_Y, campos->vel_y, campos->vel_y_p,
-             campos->vel_x_p, campos->vel_y_p, dt);
+    project(fields->vel_x, fields->vel_y, fields->pressure, fields->divergence);
 
-    proyectar(campos->vel_x, campos->vel_y, campos->presion, campos->divergencia);
+    swap_fields(&fields->vel_x_p, &fields->vel_x);
+    swap_fields(&fields->vel_y_p, &fields->vel_y);
+    advect(BND_VEL_X, fields->vel_x, fields->vel_x_p,
+          fields->vel_x_p, fields->vel_y_p, dt);
+    advect(BND_VEL_Y, fields->vel_y, fields->vel_y_p,
+          fields->vel_x_p, fields->vel_y_p, dt);
+
+    project(fields->vel_x, fields->vel_y, fields->pressure, fields->divergence);
 }

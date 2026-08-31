@@ -1,28 +1,23 @@
-# Desarrollo del proyecto: estructura y flujo de trabajo
+# Project development: structure and workflow
 
-## 1. Objetivo del proyecto
+## 1. Project goal
 
-Este repositorio implementa un screensaver de fluidos en 2D basado en las ecuaciones de Navier-Stokes para fluidos incompresibles, utilizando la aproximacion de Jos Stam conocida como Stable Fluids.
+This repository implements a 2D fluid screensaver based on the
+Navier-Stokes equations for incompressible fluids, using Jos Stam's
+"Stable Fluids" approach.
 
-La version actual es la secuencial, y la estructura del proyecto esta preparada para que la version paralela con OpenMP pueda desarrollarse sin romper la organizacion ni la claridad del codigo.
+## 2. Current state of the repository
 
----
-
-## 2. Estado actual del repositorio
-
-La base funcional del proyecto ya esta implementada y compilando correctamente en una version secuencial. En esta fase no se ha incorporado paralelismo; solo se deja la estructura lista para que la siguiente etapa agregue OpenMP o cualquier estrategia paralela sin mezclar logica de diferentes versiones.
-
-La regla general es:
-
-- src/secuencial/: codigo funcional de la version secuencial
-- src/paralela/: espacio reservado para la version paralela
-- include/: cabeceras compartidas
-- docs/: documentacion de desarrollo y decisiones de arquitectura
-- raiz del proyecto: solo carpetas, Makefile, README y binario generado
+The project is a standalone, functional sequential implementation that
+compiles cleanly. Parallelization is tracked separately via git branches
+rather than a reserved subfolder: `sequential` is the baseline developed
+here, and `parallel-omp` holds the OpenMP version. See
+`docs/OPTIMIZATIONS.md` for the branch map, the step-by-step
+parallelization plan, and benchmark results as they get filled in.
 
 ---
 
-## 3. Estructura del proyecto
+## 3. Project structure
 
 ```text
 PRY1-CPD/
@@ -30,79 +25,82 @@ PRY1-CPD/
 ├── README.md
 ├── Screensaver
 ├── docs/
-│   └── Dev.md
+│   ├── Dev.md
+│   └── OPTIMIZATIONS.md
 ├── include/
-│   ├── campos.h
-│   ├── comun.h
-│   ├── configuracion.h
-│   ├── fuentes.h
+│   ├── background.h
+│   ├── common.h
+│   ├── config.h
+│   ├── fields.h
+│   ├── nbody.h
 │   ├── render.h
 │   ├── solver.h
-│   └── utilidades.h
+│   ├── sources.h
+│   └── utils.h
 └── src/
-    ├── secuencial/
-    │   ├── app/
-    │   │   └── main.c
-    │   ├── config/
-    │   │   └── configuracion.c
-    │   ├── fluidos/
-    │   │   ├── campos.c
-    │   │   ├── fuentes.c
-    │   │   └── solver.c
-    │   ├── render/
-    │   │   └── render.c
-    │   ├── utilidades/
-    │   │   └── utilidades.c
-    │   └── legacy/
-    │       └── Screensaver_seq.c
-    └── paralela/
-        └── (reservado para la siguiente etapa)
+    ├── background.c
+    ├── config.c
+    ├── fields.c
+    ├── main.c
+    ├── nbody.c
+    ├── render.c
+    ├── solver.c
+    ├── sources.c
+    ├── utils.c
+    └── legacy/
+        └── Screensaver_seq.c
 ```
 
-### Convencion de organizacion
+### Organization convention
 
-- No se permiten archivos .c en la raiz.
-- La version secuencial se organiza por responsabilidades funcionales dentro de src/secuencial/.
-- La logica principal de cada version vive bajo src/secuencial/ o src/paralela/.
-- Las cabeceras comunes y reutilizables viven en include/.
-- La documentacion viva en docs/.
-- El binario generado queda en la raiz, como se indica en el Makefile.
-
----
-
-## 4. Descripcion funcional del proyecto
-
-El programa simula un flujo de fluidos incompresible en 2D sobre una malla regular. El sistema se resuelve con un enfoque de pasos temporales:
-
-1. Inyeccion de tinta y fuerza desde fuentes aleatorias.
-2. Difusion de la tinta y la velocidad.
-3. Adveccion del campo usando transporte semi-Lagrangiano.
-4. Proyeccion de Hodge para mantener la incompresibilidad del fluido.
-
-El render visualiza el campo de tinta como una textura que se muestra en una ventana SDL2.
-
-Las variables clave son:
-
-- malla_n: resolucion de la malla
-- fuentes: numero de puntos de inyeccion de tinta
-- dt: paso de tiempo
-- viscosidad: control del amortiguamiento del fluido
-- difusion: control de la dispersion del color
+- No `.c` files at the repo root.
+- Each module lives directly under `src/`, one file per responsibility.
+- Shared, reusable headers live in `include/`.
+- Documentation lives in `docs/`.
+- The built binary lands at the repo root, per the Makefile.
+- `src/legacy/Screensaver_seq.c` is a single-file historical reference
+  version, excluded from the build (see the Makefile's `SRC` glob), kept
+  isolated so it doesn't interfere with the modular structure. It is not
+  translated to English — it's a frozen historical artifact, not active
+  code.
 
 ---
 
-## 5. Responsabilidad de cada modulo
+## 4. Functional description
 
-### include/comun.h
-Contiene definiciones globales del proyecto:
+The program simulates an incompressible 2D fluid flow over a regular grid.
+The system is solved with a time-stepping approach:
 
-- constantes fisicas y de validacion
-- macro IX() para indexar la malla
-- codigos de frontera
-- valores por defecto del sistema
+1. Ink and force injection from random sources.
+2. Diffusion of ink and velocity.
+3. Advection of the field via semi-Lagrangian transport.
+4. Hodge projection to keep the fluid incompressible.
 
-### include/configuracion.h
-Define la estructura de configuracion del programa, asi como la interfaz para parsear argumentos desde la linea de comandos:
+The renderer visualizes the ink field as a texture shown in an SDL2 window.
+
+Key variables:
+
+- `grid_n`: grid resolution
+- `sources`: number of ink injection points
+- `dt`: time step
+- `viscosity`: controls fluid damping
+- `diffusion`: controls color spread
+
+---
+
+## 5. Responsibility of each module
+
+### include/common.h
+Project-wide global definitions:
+
+- physical and validation constants
+- the `IX()` macro for grid indexing
+- boundary codes
+- system default values
+
+### include/config.h
+Defines the program's config struct and the interface for parsing
+command-line arguments:
 
 - -n
 - -f
@@ -112,138 +110,168 @@ Define la estructura de configuracion del programa, asi como la interfaz para pa
 - -t
 - -v
 - -d
+- -b
+- -p / -F
 - -h
 
-### include/campos.h
-Define la estructura principal del estado del fluido:
+### include/fields.h
+Defines the main struct holding the fluid's state:
 
-- velocidades x/y
-- campos de tinta RGB
-- buffers temporales para los pasos numericos
-- metadatos de la malla
+- x/y velocities
+- RGB ink fields
+- scratch buffers for the numerical steps
+- grid metadata
 
-### include/fuentes.h
-Define el modelo de las fuentes de tinta y la forma en que se inyectan:
+### include/sources.h
+Defines the ink source model and how it's injected:
 
-- posicion
-- fuerza
-- direccion angular
-- caudal de tinta
+- position
+- force
+- angular direction
+- ink flow rate
+
+### include/nbody.h
+Defines the n-body system that drives source movement (mutual gravity,
+elastic bouncing off the grid edges).
 
 ### include/solver.h
-Expone el nucleo numerico del algoritmo:
+Exposes the numerical core of the algorithm:
 
-- difusion
-- adveccion
-- proyeccion
-- intercambio de buffers
-- solucion lineal de Gauss-Seidel
+- diffusion
+- advection
+- projection
+- buffer swapping
+- Gauss-Seidel linear solve
 
 ### include/render.h
-Define la API del render para asignar la textura SDL y convertir la informacion del campo de tinta a imagen visible.
+Defines the render API for filling the SDL texture and converting the ink
+field's data into a visible image.
 
-### include/utilidades.h
-Contiene utilidades generales como:
+### include/background.h
+Defines the twinkling starfield drawn behind the ink.
 
-- acotado de valores
-- entrega de numeros aleatorios
-- validacion de argumentos
-- helpers de apoyo para la simulacion
+### include/utils.h
+General-purpose utilities:
 
----
-
-## 6. Archivos fuente actuales
-
-### src/secuencial/app/main.c
-Es el punto de entrada del programa. Aqui se:
-
-- parsean argumentos
-- inicializa la memoria de los campos
-- crea la ventana SDL
-- ejecuta el ciclo principal
-- actualiza la simulacion por frame
-- renderiza la textura
-- mide FPS y muestra el titulo de la ventana
-
-### src/secuencial/config/configuracion.c
-Implementa la validacion y lectura de las opciones del programa. Mantiene la logica de parseo separada y aislada del resto del flujo principal.
-
-### src/secuencial/fluidos/campos.c
-Gestiona la reserva, liberacion y limpieza de los campos del fluido. Esta es la capa de memoria del sistema.
-
-### src/secuencial/fluidos/fuentes.c
-Genera las fuentes de tinta y las inyecta durante la simulacion. Aqui se controla la variacion temporal y el giro de la direccion del chorro.
-
-### src/secuencial/fluidos/solver.c
-Implementa la numerica principal: la difusion, adveccion, frontera, proyeccion y relajacion lineal. Es el bloque mas importante para la futura version paralela.
-
-### src/secuencial/render/render.c
-Conecta el estado numerico con SDL para dibujar la simulacion en pantalla.
-
-### src/secuencial/utilidades/utilidades.c
-Centraliza funciones complementarias que no pertenecen al nucleo fisico ni a la capa visual.
-
-### src/secuencial/legacy/Screensaver_seq.c
-Es una version del programa en un solo archivo de referencia para comparacion historica. Se mantiene aislada en la carpeta legacy para no interferir con la estructura modular actual.
+- value clamping
+- random number generation
 
 ---
 
-## 7. Regla para la version paralela
+## 6. Current source files
 
-La carpeta src/paralela/ esta reservada para la siguiente fase. La idea es mantener una separacion clara:
+### src/main.c
+The program's entry point. Here it:
 
-- secuencial: referencia y base funcional
-- paralela: implementacion optimizada con OpenMP o con otra tecnica
+- parses arguments
+- allocates field memory
+- creates the SDL window
+- runs the main loop
+- updates the simulation per frame
+- renders the texture
+- measures FPS and updates the window title
 
-Se recomienda no mezclar codigo de la version secuencial con la paralela. La mejor estrategia es:
+### src/config.c
+Implements validation and reading of the program's options. Keeps parsing
+logic separate and isolated from the rest of the main flow.
 
-1. mantener la API de modulos sin cambios para la version secuencial
-2. implementar una version paralela basada en los mismos archivos conceptuales
-3. hacer comparaciones en rendimiento bajo la misma configuracion
-4. documentar diferencias de comportamiento y resultados
+### src/fields.c
+Manages allocation, freeing and clearing of the fluid fields. This is the
+system's memory layer.
+
+### src/sources.c
+Generates the ink sources and injects them during the simulation. Controls
+the time variation and spin of the jet direction here.
+
+### src/nbody.c
+Drives the sources' movement as a mutual-gravity n-body system.
+
+### src/solver.c
+Implements the core numerics: diffusion, advection, boundary conditions,
+projection and linear relaxation. This is the most important block for the
+parallel version (see the OpenMP note in the file itself).
+
+### src/render.c
+Connects the numerical state to SDL to draw the simulation on screen.
+
+### src/background.c
+Renders the twinkling starfield behind the ink.
+
+### src/utils.c
+Centralizes helper functions that belong to neither the physics core nor
+the visual layer.
+
+### src/legacy/Screensaver_seq.c
+A single-file version of the program kept for historical comparison.
+Isolated in the `legacy/` folder so it doesn't interfere with the current
+modular structure, and excluded from the build.
 
 ---
 
-## 8. Compilacion y ejecucion
+## 7. Parallel version workflow
 
-Desde la raiz del proyecto:
+Parallelization work happens on its own git branch(es) built on top of
+`sequential`, not in a separate source subfolder — see
+`docs/OPTIMIZATIONS.md` for the branch map and the step-by-step
+incremental plan (one optimization per branch, same benchmark suite rerun
+after each step).
+
+Recommended approach:
+
+1. Keep the module API stable on `sequential`.
+2. Implement parallel changes incrementally, one concern per branch,
+   building on the previous step.
+3. Benchmark under the same configuration after each step.
+4. Document behavior differences and results in `docs/OPTIMIZATIONS.md`.
+
+---
+
+## 8. Building and running
+
+From the project root:
 
 ```bash
 make
 ./Screensaver -n 128 -f 6
 ```
 
-Para limpiar:
+To clean:
 
 ```bash
 make clean
 ```
 
-La compilacion usa SDL2 y gcc con soporte C11.
+The build uses SDL2 and gcc with C11 support.
 
 ---
 
-## 9. Recomendaciones para continuar con la fase paralela
+## 9. Recommendations for the parallel phase
 
-Cuando se empiece con OpenMP, lo ideal es seguir este orden:
+See `docs/OPTIMIZATIONS.md` for the concrete roadmap. In short:
 
-1. Analizar los kernels hot-spot en solver.c.
-2. Identificar elementos directamente paralelizables: adveccion, inyeccion, disipacion, bucles de proyecto fuera del solver lineal.
-3. Tratar con cuidado la relajacion de Gauss-Seidel, ya que introduce dependencias de datos entre celdas vecinas.
-4. Mantener la misma API de entrada/salida para realizar comparacion fair entre secuencial y paralela.
-5. Medir FPS y speedup con una bateria de pruebas reproducibles.
+1. Analyze the hot-spot kernels in `solver.c`.
+2. Identify directly parallelizable elements: advection, injection,
+   dissipation, the projection loops outside the linear solver.
+3. Handle Gauss-Seidel relaxation carefully, since it introduces data
+   dependencies between neighboring cells (see the note in `solver.c`).
+4. Keep the same input/output API for a fair sequential-vs-parallel
+   comparison.
+5. Measure FPS and speedup with a reproducible benchmark suite.
 
 ---
 
-## 10. Resumen
+## 10. Summary
 
-La estructura actual cumple con los criterios de orden y mantenibilidad esperados para una fase de paralelizacion:
+The current structure meets the order and maintainability expected for a
+parallelization phase:
 
-- codigo organizado por capas
-- separacion entre version secuencial y futura paralela
-- includes centralizadas
-- documentacion tecnica en docs/
-- raiz limpia y sin archivos .c
-- Makefile funcional y reproducible
+- code organized by module, one file per responsibility
+- centralized includes
+- technical documentation in `docs/`
+- a clean root with no `.c` files
+- a functional, reproducible Makefile
+- parallel work tracked via git branches, documented in
+  `docs/OPTIMIZATIONS.md`
 
-Esto deja el proyecto listo para evolucionar hacia la version paralela sin perder trazabilidad ni claridad en el desarrollo.
+This leaves the project ready to evolve toward the parallel version without
+losing traceability or clarity.

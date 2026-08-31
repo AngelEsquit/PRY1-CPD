@@ -2,33 +2,33 @@
 #define CONFIG_H
 
 /* ===========================================================================
- * configuracion.h
- * Lectura y validacion de los argumentos de linea de comandos.
+ * config.h
+ * Reading and validation of command-line arguments.
  * ======================================================================== */
 
 /*
- * Estructura: Configuracion
- * Agrupa todos los parametros leidos de la linea de comandos.
+ * Struct: Config
+ * Groups every parameter read from the command line.
  */
 typedef struct {
-    int          malla_n;        /* celdas interiores por lado (N)            */
-    int          num_fuentes;    /* cantidad de fuentes de tinta              */
-    int          ventana_ancho;
-    int          ventana_alto;
-    int          pantalla_completa; /* 1 = tamano exacto de la pantalla actual */
-    unsigned int semilla;        /* semilla del generador pseudoaleatorio     */
+    int          grid_n;          /* interior cells per side (N)               */
+    int          num_sources;     /* number of ink sources                     */
+    int          window_width;
+    int          window_height;
+    int          fullscreen;      /* 1 = exact size of the current screen      */
+    unsigned int seed;            /* PRNG seed                                 */
     float        dt;
-    float        viscosidad;
-    float        difusion;
-    int          nbody;          /* 1 = las fuentes se mueven por gravitacion */
-} Configuracion;
+    float        viscosity;
+    float        diffusion;
+    int          nbody;           /* 1 = sources move under mutual gravity     */
+} Config;
 
 /*
- * Recorre argv y llena la estructura de configuracion.
- * Retorna  1 si todo esta correcto,
- *          0 si hubo un error de argumentos,
- *         -1 si el usuario pidio la ayuda (-h): el programa debe terminar bien.
+ * Walks argv and fills in the config struct.
+ * Returns  1 if everything is correct,
+ *          0 if there was an argument error,
+ *         -1 if the user asked for help (-h): the program should exit cleanly.
  */
-int procesar_argumentos(int argc, char *argv[], Configuracion *config);
+int parse_arguments(int argc, char *argv[], Config *config);
 
 #endif /* CONFIG_H */

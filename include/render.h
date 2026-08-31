@@ -6,21 +6,21 @@
 
 /* ===========================================================================
  * render.h
- * Volcado de la densidad de tinta a una textura SDL para dibujarla.
+ * Dumps the ink density into an SDL texture to draw it.
  * ======================================================================== */
 
 /*
- * Vuelca la densidad de tinta a la textura de SDL, muestreando el campo N x N
- * con interpolacion bilineal propia a la resolucion de la textura destino
- * (ancho_textura x alto_textura, normalmente el tamano de la ventana).
+ * Dumps the ink density into the SDL texture, sampling the N x N field with
+ * its own bilinear interpolation at the destination texture's resolution
+ * (texture_width x texture_height, normally the window size).
  *
- * No se delega el escalado a SDL_RenderCopy porque el renderizador por
- * software de SDL2 ignora SDL_HINT_RENDER_SCALE_QUALITY y siempre escala con
- * el vecino mas cercano: eso se ve bien lejos de una fuente (la tinta ya esta
- * repartida en muchas celdas con diferencias pequenas entre si) pero se ve
- * pixelado justo donde nace (la densidad cae bruscamente en 2-3 celdas).
+ * Scaling isn't delegated to SDL_RenderCopy because SDL2's software
+ * renderer ignores SDL_HINT_RENDER_SCALE_QUALITY and always scales with
+ * nearest-neighbor: that looks fine far from a source (the ink is already
+ * spread over many cells with small differences between them) but looks
+ * pixelated right where it's born (density drops sharply within 2-3 cells).
  */
-void renderizar_tinta(SDL_Texture *textura, const CamposFluido *campos,
-                      int ancho_textura, int alto_textura);
+void render_ink(SDL_Texture *texture, const FluidFields *fields,
+                int texture_width, int texture_height);
 
 #endif /* RENDER_H */

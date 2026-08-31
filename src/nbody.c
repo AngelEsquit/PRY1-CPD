@@ -6,90 +6,90 @@
 #include <math.h>
 
 /*
- * NBODY_G:           constante de gravitacion (unidades arbitrarias, ajustada
- *                     a mano junto con las masas de inicializar_fuentes() para
- *                     que el movimiento se note pero no sea caotico).
- * NBODY_SUAVIZADO:   distancia minima efectiva entre dos fuentes; evita que
- *                     la fuerza (proporcional a 1/dist^2) se dispare a
- *                     infinito en un encuentro cercano.
- * NBODY_VEL_MAX:     velocidad maxima por eje (celdas/frame); limita el
- *                     "efecto honda" de un encuentro cercano para que la
- *                     integracion explicita se mantenga estable.
- * NBODY_RESTITUCION: fraccion de la velocidad que se conserva al rebotar
- *                     contra un muro (<1 = rebote inelastico, se amortigua).
+ * NBODY_G:           gravitational constant (arbitrary units, hand-tuned
+ *                     together with the masses in init_sources() so the
+ *                     motion is noticeable but not chaotic).
+ * NBODY_SOFTENING:   effective minimum distance between two sources; keeps
+ *                     the force (proportional to 1/dist^2) from blowing up
+ *                     to infinity on a close encounter.
+ * NBODY_VEL_MAX:     maximum velocity per axis (cells/frame); limits the
+ *                     "slingshot effect" of a close encounter so explicit
+ *                     integration stays stable.
+ * NBODY_RESTITUTION: fraction of velocity kept when bouncing off a wall
+ *                     (<1 = inelastic bounce, damped).
  */
 #define NBODY_G            0.3f
-#define NBODY_SUAVIZADO    6.0f
+#define NBODY_SOFTENING    6.0f
 #define NBODY_VEL_MAX      5.0f
-#define NBODY_RESTITUCION  0.9f
+#define NBODY_RESTITUTION  0.9f
 
 /*
- * Avanza un frame el sistema de n-cuerpos formado por las fuentes: cada
- * fuente atrae a las demas segun la ley de gravitacion universal
- * (F = G*m1*m2/d^2, suavizada) y rebota elasticamente contra los bordes de
- * la malla para permanecer siempre visible en pantalla.
+ * Advances one frame of the n-body system formed by the sources: each
+ * source attracts the others according to the law of universal gravitation
+ * (F = G*m1*m2/d^2, softened) and bounces elastically off the grid's edges
+ * to stay always visible on screen.
  *
- * El "frame" se usa como unidad de tiempo (igual que vel_angular, que ya se
- * expresa en rad/frame), asi que no depende del dt de la simulacion de
- * fluidos: el movimiento de las fuentes es un fenomeno aparte que solo
- * comparte la malla con el solver.
+ * The "frame" is used as the unit of time (same as angular_vel, already
+ * expressed in rad/frame), so it doesn't depend on the fluid simulation's
+ * dt: the sources' motion is a separate phenomenon that only shares the
+ * grid with the solver.
  */
-void actualizar_fuentes_nbody(FuenteTinta *fuentes, int cantidad, int resolucion)
+void update_nbody_sources(InkSource *sources, int count, int resolution)
 {
-    float acel_x[FUENTES_MAX] = { 0 };
-    float acel_y[FUENTES_MAX] = { 0 };
+    float accel_x[SOURCES_MAX] = { 0 };
+    float accel_y[SOURCES_MAX] = { 0 };
     int   i, j;
-    const int radio = fuente_radio(resolucion);
-    /* Las fuentes no pueden salir del vecindario de inyeccion (ver
-     * fuente_radio(), definido en fuentes.h) sin perder celdas interiores
-     * validas. */
-    const float limite_inf = (float)(radio + 1);
-    const float limite_sup = (float)(resolucion - radio);
+    const int radius = source_radius(resolution);
+    /* Sources can't leave the injection neighborhood (see source_radius(),
+     * defined in sources.h) without losing valid interior cells. */
+    const float lower_bound = (float)(radius + 1);
+    const float upper_bound = (float)(resolution - radius);
 
-    for (i = 0; i < cantidad; i++) {
-        for (j = i + 1; j < cantidad; j++) {
-            float dif_x    = fuentes[j].pos_x - fuentes[i].pos_x;
-            float dif_y    = fuentes[j].pos_y - fuentes[i].pos_y;
-            float dist2    = dif_x * dif_x + dif_y * dif_y +
-                              NBODY_SUAVIZADO * NBODY_SUAVIZADO;
+    for (i = 0; i < count; i++) {
+        for (j = i + 1; j < count; j++) {
+            float diff_x   = sources[j].pos_x - sources[i].pos_x;
+            float diff_y   = sources[j].pos_y - sources[i].pos_y;
+            float dist2    = diff_x * diff_x + diff_y * diff_y +
+                              NBODY_SOFTENING * NBODY_SOFTENING;
             float inv_dist = 1.0f / sqrtf(dist2);
-            /* factor comun G/d^3 (suavizada); multiplicado por la masa del
-             * otro cuerpo da la aceleracion segun la 2a ley de Newton, y la
-             * 3a ley (accion-reaccion) evita recalcular el par simetrico. */
+            /* common factor G/d^3 (softened); multiplied by the other
+             * body's mass gives the acceleration per Newton's 2nd law, and
+             * the 3rd law (action-reaction) avoids recomputing the
+             * symmetric pair. */
             float factor   = NBODY_G * inv_dist * inv_dist * inv_dist;
 
-            acel_x[i] += factor * fuentes[j].masa * dif_x;
-            acel_y[i] += factor * fuentes[j].masa * dif_y;
-            acel_x[j] -= factor * fuentes[i].masa * dif_x;
-            acel_y[j] -= factor * fuentes[i].masa * dif_y;
+            accel_x[i] += factor * sources[j].mass * diff_x;
+            accel_y[i] += factor * sources[j].mass * diff_y;
+            accel_x[j] -= factor * sources[i].mass * diff_x;
+            accel_y[j] -= factor * sources[i].mass * diff_y;
         }
     }
 
-    for (i = 0; i < cantidad; i++) {
-        fuentes[i].vel_x = acotar(fuentes[i].vel_x + acel_x[i],
-                                  -NBODY_VEL_MAX, NBODY_VEL_MAX);
-        fuentes[i].vel_y = acotar(fuentes[i].vel_y + acel_y[i],
-                                  -NBODY_VEL_MAX, NBODY_VEL_MAX);
+    for (i = 0; i < count; i++) {
+        sources[i].vel_x = clamp(sources[i].vel_x + accel_x[i],
+                                 -NBODY_VEL_MAX, NBODY_VEL_MAX);
+        sources[i].vel_y = clamp(sources[i].vel_y + accel_y[i],
+                                 -NBODY_VEL_MAX, NBODY_VEL_MAX);
 
-        fuentes[i].pos_x += fuentes[i].vel_x;
-        fuentes[i].pos_y += fuentes[i].vel_y;
+        sources[i].pos_x += sources[i].vel_x;
+        sources[i].pos_y += sources[i].vel_y;
 
-        /* Rebote elastico (amortiguado) contra los bordes de la malla: la
-         * fuente queda confinada a la caja en vez de escapar de la pantalla. */
-        if (fuentes[i].pos_x < limite_inf) {
-            fuentes[i].pos_x = limite_inf;
-            fuentes[i].vel_x = -fuentes[i].vel_x * NBODY_RESTITUCION;
-        } else if (fuentes[i].pos_x > limite_sup) {
-            fuentes[i].pos_x = limite_sup;
-            fuentes[i].vel_x = -fuentes[i].vel_x * NBODY_RESTITUCION;
+        /* Elastic (damped) bounce off the grid's edges: the source stays
+         * confined to the box instead of escaping the screen. */
+        if (sources[i].pos_x < lower_bound) {
+            sources[i].pos_x = lower_bound;
+            sources[i].vel_x = -sources[i].vel_x * NBODY_RESTITUTION;
+        } else if (sources[i].pos_x > upper_bound) {
+            sources[i].pos_x = upper_bound;
+            sources[i].vel_x = -sources[i].vel_x * NBODY_RESTITUTION;
         }
 
-        if (fuentes[i].pos_y < limite_inf) {
-            fuentes[i].pos_y = limite_inf;
-            fuentes[i].vel_y = -fuentes[i].vel_y * NBODY_RESTITUCION;
-        } else if (fuentes[i].pos_y > limite_sup) {
-            fuentes[i].pos_y = limite_sup;
-            fuentes[i].vel_y = -fuentes[i].vel_y * NBODY_RESTITUCION;
+        if (sources[i].pos_y < lower_bound) {
+            sources[i].pos_y = lower_bound;
+            sources[i].vel_y = -sources[i].vel_y * NBODY_RESTITUTION;
+        } else if (sources[i].pos_y > upper_bound) {
+            sources[i].pos_y = upper_bound;
+            sources[i].vel_y = -sources[i].vel_y * NBODY_RESTITUTION;
         }
     }
 }

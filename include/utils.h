@@ -2,14 +2,14 @@
 #define UTILS_H
 
 /* ===========================================================================
- * utilidades.h
- * Funciones de proposito general usadas por varios modulos.
+ * utils.h
+ * General-purpose functions used by several modules.
  * ======================================================================== */
 
-/* Devuelve un flotante pseudoaleatorio uniforme en [minimo, maximo]. */
-float aleatorio_rango(float minimo, float maximo);
+/* Returns a uniform pseudo-random float in [min, max]. */
+float random_range(float min, float max);
 
-/* Limita un valor flotante al intervalo [minimo, maximo]. */
-float acotar(float valor, float minimo, float maximo);
+/* Clamps a float value to the interval [min, max]. */
+float clamp(float value, float min, float max);
 
 #endif /* UTILS_H */

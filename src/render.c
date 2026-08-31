@@ -6,122 +6,123 @@
 #include <stddef.h>
 #include <stdio.h>
 
-/* Exponente de la curva gamma del alfa (ver renderizar_tinta): mientras mas
- * chico, mas rapido llega el alfa a opaco con poco brillo de tinta. */
-#define ALFA_GAMMA 0.35f
+/* Exponent of alpha's gamma curve (see render_ink): the smaller it is, the
+ * faster alpha reaches opaque with little ink brightness. */
+#define ALPHA_GAMMA 0.35f
 
 /*
- * Interpola bilinealmente "campo" (malla N x N con anillo fantasma) en la
- * posicion continua (fx, fy), expresada en el mismo espacio que un indice de
- * pixel de la textura N x N original: fx=0 es el centro de la celda interior
- * 1, fx=malla_n-1 es el centro de la celda interior malla_n.
+ * Bilinearly interpolates "field" (an N x N grid with a ghost ring) at the
+ * continuous position (fx, fy), expressed in the same space as a pixel
+ * index of the original N x N texture: fx=0 is the center of interior cell
+ * 1, fx=grid_n-1 is the center of interior cell grid_n.
  */
-static float muestrear_bilineal(const float *campo, float fx, float fy)
+static float sample_bilinear(const float *field, float fx, float fy)
 {
     int i0, i1, j0, j1;
-    float peso_x1, peso_x0, peso_y1, peso_y0;
+    float weight_x1, weight_x0, weight_y1, weight_y0;
 
-    fx = acotar(fx, 0.0f, (float)(malla_n - 1));
-    fy = acotar(fy, 0.0f, (float)(malla_n - 1));
+    fx = clamp(fx, 0.0f, (float)(grid_n - 1));
+    fy = clamp(fy, 0.0f, (float)(grid_n - 1));
 
-    i0 = (int)fx;  i1 = (i0 < malla_n - 1) ? i0 + 1 : i0;
-    j0 = (int)fy;  j1 = (j0 < malla_n - 1) ? j0 + 1 : j0;
+    i0 = (int)fx;  i1 = (i0 < grid_n - 1) ? i0 + 1 : i0;
+    j0 = (int)fy;  j1 = (j0 < grid_n - 1) ? j0 + 1 : j0;
 
-    peso_x1 = fx - (float)i0;  peso_x0 = 1.0f - peso_x1;
-    peso_y1 = fy - (float)j0;  peso_y0 = 1.0f - peso_y1;
+    weight_x1 = fx - (float)i0;  weight_x0 = 1.0f - weight_x1;
+    weight_y1 = fy - (float)j0;  weight_y0 = 1.0f - weight_y1;
 
-    /* +1 desplaza del espacio de pixel (0..N-1) al indice de celda interior
-     * (1..N) dentro de la malla con anillo fantasma. */
-    return peso_x0 * (peso_y0 * campo[IX(i0 + 1, j0 + 1)] +
-                       peso_y1 * campo[IX(i0 + 1, j1 + 1)]) +
-           peso_x1 * (peso_y0 * campo[IX(i1 + 1, j0 + 1)] +
-                       peso_y1 * campo[IX(i1 + 1, j1 + 1)]);
+    /* +1 shifts from pixel space (0..N-1) to the interior cell index
+     * (1..N) inside the grid with its ghost ring. */
+    return weight_x0 * (weight_y0 * field[IX(i0 + 1, j0 + 1)] +
+                        weight_y1 * field[IX(i0 + 1, j1 + 1)]) +
+           weight_x1 * (weight_y0 * field[IX(i1 + 1, j0 + 1)] +
+                        weight_y1 * field[IX(i1 + 1, j1 + 1)]);
 }
 
 /*
- * Vuelca la densidad de tinta a la textura de SDL, con un pixel de la
- * textura por cada pixel de destino (ver render.h para el porque de esto:
- * el renderizador por software de SDL2 no hace escalado lineal).
+ * Dumps the ink density into the SDL texture, one texture pixel per
+ * destination pixel (see render.h for why: SDL2's software renderer
+ * doesn't do linear scaling).
  */
-void renderizar_tinta(SDL_Texture *textura, const CamposFluido *campos,
-                      int ancho_textura, int alto_textura)
+void render_ink(SDL_Texture *texture, const FluidFields *fields,
+                int texture_width, int texture_height)
 {
-    void  *pixeles_crudos = NULL;
-    int    pitch_bytes    = 0;
-    Uint32 *pixeles;
+    void  *raw_pixels = NULL;
+    int    pitch_bytes = 0;
+    Uint32 *pixels;
     int    i, j;
     float  fx, fy;
-    float  valor_r, valor_g, valor_b, promedio;
-    const float escala_x = (float)malla_n / (float)ancho_textura;
-    const float escala_y = (float)malla_n / (float)alto_textura;
+    float  value_r, value_g, value_b, average;
+    const float scale_x = (float)grid_n / (float)texture_width;
+    const float scale_y = (float)grid_n / (float)texture_height;
 
-    if (SDL_LockTexture(textura, NULL, &pixeles_crudos, &pitch_bytes) != 0) {
-        fprintf(stderr, "Advertencia: no se pudo bloquear la textura: %s\n",
+    if (SDL_LockTexture(texture, NULL, &raw_pixels, &pitch_bytes) != 0) {
+        fprintf(stderr, "Warning: could not lock the texture: %s\n",
                 SDL_GetError());
         return;
     }
 
-    pixeles = (Uint32 *)pixeles_crudos;
+    pixels = (Uint32 *)raw_pixels;
 
-    for (j = 0; j < alto_textura; j++) {
-        Uint32 *fila = pixeles + (size_t)j * ((size_t)pitch_bytes / sizeof(Uint32));
-        fy = ((float)j + 0.5f) * escala_y - 0.5f;
+    for (j = 0; j < texture_height; j++) {
+        Uint32 *row = pixels + (size_t)j * ((size_t)pitch_bytes / sizeof(Uint32));
+        fy = ((float)j + 0.5f) * scale_y - 0.5f;
 
-        for (i = 0; i < ancho_textura; i++) {
-            fx = ((float)i + 0.5f) * escala_x - 0.5f;
+        for (i = 0; i < texture_width; i++) {
+            fx = ((float)i + 0.5f) * scale_x - 0.5f;
 
-            /* Se aplica un mapeo tipo Reinhard (x / (x + k)) en lugar de un
-             * recorte duro, para que la acumulacion de muchas fuentes se
-             * comprima suavemente hacia blanco en vez de saturar de golpe. */
-            valor_r = muestrear_bilineal(campos->tinta_r, fx, fy) * BRILLO_FACTOR;
-            valor_g = muestrear_bilineal(campos->tinta_g, fx, fy) * BRILLO_FACTOR;
-            valor_b = muestrear_bilineal(campos->tinta_b, fx, fy) * BRILLO_FACTOR;
+            /* A Reinhard-style mapping (x / (x + k)) is applied instead of
+             * a hard clip, so the buildup of many sources compresses
+             * smoothly toward white instead of clipping abruptly. */
+            value_r = sample_bilinear(fields->ink_r, fx, fy) * BRIGHTNESS_FACTOR;
+            value_g = sample_bilinear(fields->ink_g, fx, fy) * BRIGHTNESS_FACTOR;
+            value_b = sample_bilinear(fields->ink_b, fx, fy) * BRIGHTNESS_FACTOR;
 
-            valor_r = valor_r / (valor_r + CONTRASTE_FACTOR);
-            valor_g = valor_g / (valor_g + CONTRASTE_FACTOR);
-            valor_b = valor_b / (valor_b + CONTRASTE_FACTOR);
+            value_r = value_r / (value_r + CONTRAST_FACTOR);
+            value_g = value_g / (value_g + CONTRAST_FACTOR);
+            value_b = value_b / (value_b + CONTRAST_FACTOR);
 
-            /* Empuja cada canal lejos del gris promedio del pixel para
-             * recuperar saturacion sin alterar el brillo medio, evitando
-             * que el resultado se vea lavado/blanco. */
-            promedio = (valor_r + valor_g + valor_b) / 3.0f;
-            valor_r = acotar(promedio + (valor_r - promedio) * SATURACION_FACTOR, 0.0f, 1.0f);
-            valor_g = acotar(promedio + (valor_g - promedio) * SATURACION_FACTOR, 0.0f, 1.0f);
-            valor_b = acotar(promedio + (valor_b - promedio) * SATURACION_FACTOR, 0.0f, 1.0f);
+            /* Pushes each channel away from the pixel's average gray to
+             * recover saturation without changing the mean brightness,
+             * keeping the result from looking washed-out/white. */
+            average = (value_r + value_g + value_b) / 3.0f;
+            value_r = clamp(average + (value_r - average) * SATURATION_FACTOR, 0.0f, 1.0f);
+            value_g = clamp(average + (value_g - average) * SATURATION_FACTOR, 0.0f, 1.0f);
+            value_b = clamp(average + (value_b - average) * SATURATION_FACTOR, 0.0f, 1.0f);
 
-            /* Alfa proporcional al brillo de la tinta (en vez de 0xFF fijo):
-             * donde no hay tinta el pixel es transparente y deja ver el
-             * fondo (estrellas/vinieta) dibujado antes en el renderer; donde
-             * la tinta satura, el pixel es opaco y la tapa por completo. El
-             * canal mas alto de los tres se usa como aproximacion de
-             * brillo (evita que un color muy saturado en un solo canal, con
-             * promedio bajo, se vea mas transparente de lo que deberia). */
+            /* Alpha proportional to the ink's brightness (instead of a
+             * fixed 0xFF): where there's no ink the pixel is transparent
+             * and the background (stars/vignette) drawn earlier on the
+             * renderer shows through; where the ink saturates, the pixel
+             * is opaque and covers it completely. The highest of the three
+             * channels is used as a brightness approximation (keeps a
+             * color heavily saturated in a single channel, with a low
+             * average, from looking more transparent than it should). */
             {
-                float brillo_max, alfa;
+                float max_brightness, alpha;
 
-                brillo_max = valor_r;
-                if (valor_g > brillo_max) brillo_max = valor_g;
-                if (valor_b > brillo_max) brillo_max = valor_b;
+                max_brightness = value_r;
+                if (value_g > max_brightness) max_brightness = value_g;
+                if (value_b > max_brightness) max_brightness = value_b;
 
-                /* Usar brillo_max directo como alfa deja gran parte de la
-                 * mancha (todo lo que no este ya saturado a full brillo)
-                 * semi-transparente, y SDL_BLENDMODE_BLEND la mezcla con el
-                 * fondo oscuro de mas atras: el resultado se ve deslavado,
-                 * como si el color de la tinta perdiera intensidad. Una
-                 * curva gamma (<1) empuja el alfa a opaco mucho mas rapido
-                 * que el brillo real, asi que la mancha se ve tan vivida
-                 * como antes de agregar el fondo, y solo el borde donde la
-                 * tinta cae casi a cero se queda transparente (para que ahi
-                 * se vean las estrellas). */
-                alfa = powf(brillo_max, ALFA_GAMMA);
+                /* Using max_brightness directly as alpha leaves most of
+                 * the blob (anything not already saturated to full
+                 * brightness) semi-transparent, and SDL_BLENDMODE_BLEND
+                 * mixes it with the dark background behind it: the result
+                 * looks washed out, as if the ink's color lost intensity.
+                 * A gamma curve (<1) pushes alpha to opaque much faster
+                 * than the real brightness, so the blob looks as vivid as
+                 * it did before the background was added, and only the
+                 * edge where the ink drops to nearly zero stays
+                 * transparent (so the stars show through there). */
+                alpha = powf(max_brightness, ALPHA_GAMMA);
 
-                fila[i] = ((Uint32)(alfa * 255.0f) << 24) |
-                          ((Uint32)(valor_r * 255.0f) << 16) |
-                          ((Uint32)(valor_g * 255.0f) <<  8) |
-                          ((Uint32)(valor_b * 255.0f));
+                row[i] = ((Uint32)(alpha * 255.0f) << 24) |
+                         ((Uint32)(value_r * 255.0f) << 16) |
+                         ((Uint32)(value_g * 255.0f) <<  8) |
+                         ((Uint32)(value_b * 255.0f));
             }
         }
     }
 
-    SDL_UnlockTexture(textura);
+    SDL_UnlockTexture(texture);
 }

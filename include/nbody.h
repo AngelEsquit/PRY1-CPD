@@ -4,17 +4,16 @@
 #include "sources.h"
 
 /* ===========================================================================
- * ncuerpos.h
- * Sistema de n-cuerpos que gobierna el movimiento de las fuentes de tinta.
+ * nbody.h
+ * N-body system that drives the movement of the ink sources.
  * ======================================================================== */
 
 /*
- * Avanza un frame el sistema de n-cuerpos formado por las fuentes: cada
- * fuente atrae a las demas segun la ley de gravitacion universal (suavizada
- * para evitar fuerzas infinitas en encuentros cercanos), y rebota
- * elasticamente contra los bordes de la malla para permanecer siempre
- * visible en pantalla.
+ * Advances one frame of the n-body system formed by the sources: each
+ * source attracts the others according to the law of universal gravitation
+ * (softened to avoid infinite forces on close encounters), and bounces
+ * elastically off the grid's edges to stay always visible on screen.
  */
-void actualizar_fuentes_nbody(FuenteTinta *fuentes, int cantidad, int resolucion);
+void update_nbody_sources(InkSource *sources, int count, int resolution);
 
 #endif /* NBODY_H */

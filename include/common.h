@@ -2,71 +2,70 @@
 #define COMMON_H
 
 /* ===========================================================================
- * comun.h
+ * common.h
  * ---------------------------------------------------------------------------
- * Constantes, macros y valores compartidos por todos los modulos del
- * screensaver de fluidos (Navier-Stokes / Stable Fluids).
+ * Constants, macros and values shared by every module of the fluid
+ * screensaver (Navier-Stokes / Stable Fluids).
  * ======================================================================== */
 
 /* ---------------------------------------------------------------------------
- * Constantes de configuracion y limites de validacion (programacion defensiva)
+ * Configuration constants and validation limits (defensive programming)
  * ------------------------------------------------------------------------- */
-#define MALLA_MIN            16    /* resolucion minima de la malla            */
-#define MALLA_MAX          1024    /* resolucion maxima de la malla            */
-#define MALLA_DEFAULT       256
-#define FUENTES_MIN           1    /* al menos una fuente de tinta             */
-#define FUENTES_MAX         256
-#define FUENTES_DEFAULT       6
-#define VENTANA_ANCHO_MIN   640    /* exigido por el enunciado del proyecto    */
-#define VENTANA_ALTO_MIN    480
-#define VENTANA_ANCHO_DEF  1920 
-#define VENTANA_ALTO_DEF   1080 
-#define ITER_GAUSS_SEIDEL    20    /* iteraciones del solver lineal            */
+#define GRID_MIN              16    /* minimum grid resolution                  */
+#define GRID_MAX             1024    /* maximum grid resolution                  */
+#define GRID_DEFAULT          256
+#define SOURCES_MIN             1    /* at least one ink source                  */
+#define SOURCES_MAX           256
+#define SOURCES_DEFAULT          6
+#define WINDOW_WIDTH_MIN       640    /* required by the project spec             */
+#define WINDOW_HEIGHT_MIN      480
+#define WINDOW_WIDTH_DEFAULT  1920
+#define WINDOW_HEIGHT_DEFAULT 1080
+#define GAUSS_SEIDEL_ITERS       20    /* iterations of the linear solver          */
 
-/* M_PI no forma parte del estandar C11 (solo de POSIX), se define aqui para
- * que el programa compile de forma portable con -std=c11.                    */
+/* M_PI is not part of the C11 standard (POSIX only), so it's defined here
+ * for the program to compile portably with -std=c11.                        */
 #define PI 3.14159265358979323846f
 
-/* Parametros fisicos por defecto (ajustables por linea de comandos) */
-#define DT_DEFAULT         0.07f   /* paso de tiempo                           */
-#define BRILLO_FACTOR       0.6f   /* factor de brillo aplicado al render      */
-#define CONTRASTE_FACTOR     1.0f   /* satura mas lento cuanto mas alto (evita
-                                        que la acumulacion de tinta se vea
-                                        blanca al superponerse muchas fuentes) */
-#define SATURACION_FACTOR    2.4f   /* aleja cada canal del gris promedio del
-                                        pixel (>1 = mas vivido); al ser
-                                        simetrico respecto al promedio no
-                                        empuja el color hacia blanco        */
-#define VISC_DEFAULT       0.0000f /* viscosidad cinematica del fluido         */
-#define DIFF_DEFAULT       0.0001f /* difusion de la tinta: sin esto (0.0) la
-                                       tinta solo se suaviza por la forma fija
-                                       del nucleo de inyeccion, y se ve con un
-                                       borde duro/brusco justo al nacer; con
-                                       difusion activa cada fuente nace ya
-                                       difuminandose, como tinta real en agua */
-#define DISIPACION         0.995f /* retencion de tinta por frame (factor
-                                      multiplicativo); con 0.3 la tinta perdia
-                                      el 70% de su valor en cada frame y se
-                                      apagaba antes de poder advectarse fuera
-                                      de la celda de origen                   */
+/* Default physical parameters (adjustable via command line) */
+#define DT_DEFAULT          0.07f   /* time step                                */
+#define BRIGHTNESS_FACTOR    0.6f   /* brightness factor applied to the render  */
+#define CONTRAST_FACTOR      1.0f   /* saturates slower the higher it is (keeps
+                                        ink from looking white where many
+                                        sources overlap)                       */
+#define SATURATION_FACTOR    2.4f   /* pushes each channel away from the
+                                        pixel's average gray (>1 = more vivid);
+                                        being symmetric around the average, it
+                                        doesn't push the color toward white   */
+#define VISC_DEFAULT        0.0000f /* kinematic viscosity of the fluid         */
+#define DIFF_DEFAULT        0.0001f /* ink diffusion coefficient: without this
+                                        (0.0) ink is only smoothed by the fixed
+                                        shape of the injection kernel, and shows
+                                        a hard/abrupt edge right as it's born;
+                                        with diffusion on, each source is born
+                                        already blurring, like real ink in water */
+#define DISSIPATION         0.995f /* ink retained per frame (multiplicative
+                                       factor); at 0.3 the ink lost 70% of its
+                                       value every frame and faded out before it
+                                       could be advected out of its origin cell */
 
 /* ---------------------------------------------------------------------------
- * Indexacion de la malla.
- * La malla tiene (N+2)x(N+2) celdas: N x N celdas interiores (indices 1..N)
- * mas un anillo de celdas fantasma en el borde para las condiciones de
- * frontera. Se almacena en un arreglo 1D en orden row-major.
+ * Grid indexing.
+ * The grid has (N+2)x(N+2) cells: N x N interior cells (indices 1..N) plus a
+ * ring of ghost cells at the border for the boundary conditions. Stored as a
+ * 1D array in row-major order.
  *
- * "malla_n" se define una sola vez en main.c y se declara aqui como extern
- * para que la macro IX() este disponible (y sea legible) en todos los
- * modulos que trabajan sobre la malla.
+ * "grid_n" is defined once in main.c and declared here as extern so the
+ * IX() macro is available (and readable) in every module that operates on
+ * the grid.
  * ------------------------------------------------------------------------- */
-extern int malla_n;
+extern int grid_n;
 
-#define IX(i, j) ((i) + (malla_n + 2) * (j))
+#define IX(i, j) ((i) + (grid_n + 2) * (j))
 
-/* Codigos de frontera usados por aplicar_frontera() (ver solver.c) */
-#define BND_ESCALAR   0  /* campo escalar: se copia el vecino interior        */
-#define BND_VEL_X     1  /* componente x de velocidad: se refleja en muros    */
-#define BND_VEL_Y     2  /* componente y de velocidad: se refleja en muros    */
+/* Boundary codes used by apply_boundary() (see solver.c) */
+#define BND_SCALAR   0  /* scalar field: copies the interior neighbor        */
+#define BND_VEL_X    1  /* x velocity component: reflected at walls         */
+#define BND_VEL_Y    2  /* y velocity component: reflected at walls         */
 
 #endif /* COMMON_H */

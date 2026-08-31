@@ -4,98 +4,97 @@
 #include "fields.h"
 
 /* ===========================================================================
- * fuentes.h
- * Fuentes de tinta: inicializacion, inyeccion por frame y disipacion.
+ * sources.h
+ * Ink sources: initialization, per-frame injection and dissipation.
  * ======================================================================== */
 
 /*
- * Radio (en celdas) del vecindario de inyeccion, calibrado para una malla
- * de referencia de FUENTE_MALLA_REF celdas y escalado con la resolucion
- * real (ver fuente_radio/fuente_sigma) para que la mancha ocupe siempre la
- * misma fraccion de pantalla sin importar cuantas celdas tenga la malla:
- * con el radio fijo, una malla mas fina reduce cuantos pixeles de pantalla
- * ocupa ese mismo puñado de celdas, y el nacimiento de la tinta se ve como
- * "un puñado de pixeles" en vez de una mancha suave.
+ * Radius (in cells) of the injection neighborhood, calibrated for a
+ * reference grid of SOURCE_GRID_REF cells and scaled with the actual
+ * resolution (see source_radius/source_sigma) so the blob always covers the
+ * same fraction of the screen regardless of grid resolution: with a fixed
+ * radius, a finer grid shrinks how many screen pixels that same handful of
+ * cells occupies, and the ink is born looking like "a handful of pixels"
+ * instead of a smooth blob.
  *
- * El peso gaussiano de cada celda se divide entre el cuadrado del factor
- * de escala (ver inyectar_fuentes): el area del vecindario (~radio*sigma)
- * crece con la escala, y sin esa correccion la tinta total depositada por
- * fuente crecería con ella y saturaría la pantalla de blanco (ya paso una
- * vez: ver historial). Dividir entre escala^2 mantiene el total invariante
- * y solo mejora cuantas celdas dibujan el circulo.
+ * Each cell's Gaussian weight is divided by the square of the scale factor
+ * (see inject_sources): the neighborhood's area (~radius*sigma) grows with
+ * the scale, and without that correction the total ink deposited per source
+ * would grow with it and saturate the screen white (already happened once:
+ * see history). Dividing by scale^2 keeps the total invariant and only
+ * improves how many cells draw the circle.
  */
-#define FUENTE_RADIO_BASE   2
-#define FUENTE_SIGMA_BASE   1.1f
-#define FUENTE_MALLA_REF    128
+#define SOURCE_RADIUS_BASE   2
+#define SOURCE_SIGMA_BASE    1.1f
+#define SOURCE_GRID_REF      128
 
-static inline float fuente_escala(int resolucion)
+static inline float source_scale(int resolution)
 {
-    float escala = (float)resolucion / (float)FUENTE_MALLA_REF;
-    return (escala < 1.0f) ? 1.0f : escala;
+    float scale = (float)resolution / (float)SOURCE_GRID_REF;
+    return (scale < 1.0f) ? 1.0f : scale;
 }
 
-static inline int fuente_radio(int resolucion)
+static inline int source_radius(int resolution)
 {
-    float escala = fuente_escala(resolucion);
-    int   radio  = (int)(FUENTE_RADIO_BASE * escala + 0.5f);
-    return (radio < FUENTE_RADIO_BASE) ? FUENTE_RADIO_BASE : radio;
+    float scale  = source_scale(resolution);
+    int   radius = (int)(SOURCE_RADIUS_BASE * scale + 0.5f);
+    return (radius < SOURCE_RADIUS_BASE) ? SOURCE_RADIUS_BASE : radius;
 }
 
-static inline float fuente_sigma(int resolucion)
+static inline float source_sigma(int resolution)
 {
-    return FUENTE_SIGMA_BASE * fuente_escala(resolucion);
+    return SOURCE_SIGMA_BASE * source_scale(resolution);
 }
 
 /*
- * Estructura: FuenteTinta
- * Emisor puntual que inyecta color y cantidad de movimiento en la malla.
- * Las fuentes se desplazan por la malla como un sistema de n-cuerpos: cada
- * una atrae gravitacionalmente a las demas (ver ncuerpos.h).
+ * Struct: InkSource
+ * A point emitter that injects color and momentum into the grid. Sources
+ * move across the grid as an n-body system: each one gravitationally
+ * attracts the others (see nbody.h).
  */
 typedef struct {
-    float pos_x, pos_y;          /* posicion continua en la malla (celdas)    */
-    float vel_x, vel_y;          /* velocidad de desplazamiento (celdas/frame)*/
-    float masa;                  /* masa gravitacional (n-cuerpos)            */
-    float color_r, color_g, color_b; /* color de la tinta en [0,1]            */
-    float fase;                  /* fase angular actual (radianes)            */
-    float vel_angular;           /* rapidez de giro del chorro (rad/frame)    */
-    float fuerza;                /* magnitud de la velocidad inyectada        */
-    float caudal;                /* cantidad de tinta inyectada por frame     */
-} FuenteTinta;
+    float pos_x, pos_y;          /* continuous position on the grid (cells)   */
+    float vel_x, vel_y;          /* drift velocity (cells/frame)              */
+    float mass;                  /* gravitational mass (n-body)               */
+    float color_r, color_g, color_b; /* ink color in [0,1]                    */
+    float phase;                 /* current angular phase (radians)           */
+    float angular_vel;           /* jet spin rate (rad/frame)                 */
+    float force;                 /* magnitude of the injected velocity        */
+    float flow_rate;             /* amount of ink injected per frame          */
+} InkSource;
 
 /*
- * Inicializa las fuentes con posicion, velocidad, masa, color, fase y fuerza
- * pseudoaleatorias. Las posiciones se mantienen alejadas del borde para que
- * el chorro se desarrolle antes de chocar con los muros.
+ * Initializes the sources with pseudo-random position, velocity, mass,
+ * color, phase and force. Positions are kept away from the border so the
+ * jet can develop before hitting the walls.
  */
-void inicializar_fuentes(FuenteTinta *fuentes, int cantidad, int resolucion);
+void init_sources(InkSource *sources, int count, int resolution);
 
 /*
- * Deposita en los buffers "previos" (que actuan como termino fuente) la tinta
- * y la cantidad de movimiento de cada fuente para el frame actual.
+ * Deposits into the "previous" buffers (which act as the source term) the
+ * ink and momentum of each source for the current frame.
  *
- * ELEMENTO TRIGONOMETRICO: la direccion del chorro de cada fuente rota en el
- * tiempo segun (cos(fase), sin(fase)), lo que genera vortices en espiral.
- * La tinta se deposita en un vecindario de celdas con caida gaussiana para
- * suavizar la inyeccion y evitar valores puntuales muy bruscos.
+ * TRIGONOMETRIC ELEMENT: each source's jet direction rotates over time as
+ * (cos(phase), sin(phase)), which generates spiral vortices. Ink is
+ * deposited over a neighborhood of cells with Gaussian falloff to smooth
+ * out the injection and avoid harsh pointwise values.
  *
- * "aspecto" es ancho_ventana/alto_ventana. La malla es siempre cuadrada
- * (malla_n x malla_n) pero la ventana no tiene por que serlo: render.c usa
- * una escala distinta en x y en y para llenar la ventana, asi que una celda
- * de la malla no ocupa un cuadrado de pantalla sino un rectangulo de
- * "aspecto" veces mas ancho que alto. Sin corregir esto, un nucleo gaussiano
- * isotropico (mismo sigma en x y en y, en unidades de celda) se ve en
- * pantalla como una elipse mas ancha que alta. Aqui se encoge el sigma en x
- * por ese mismo factor para que, tras el escalado anisotropico de render.c,
- * la mancha vuelva a verse circular.
+ * "aspect" is window_width/window_height. The grid is always square
+ * (grid_n x grid_n) but the window doesn't have to be: render.c uses a
+ * different scale on x and y to fill the window, so a grid cell doesn't map
+ * to a square on screen but to a rectangle "aspect" times wider than tall.
+ * Without correcting for this, an isotropic Gaussian kernel (same sigma on
+ * x and y, in cell units) would look on screen like an ellipse wider than
+ * tall. Here sigma on x is shrunk by that same factor so that, after
+ * render.c's anisotropic scaling, the blob looks circular again.
  */
-void inyectar_fuentes(FuenteTinta *fuentes, int cantidad, CamposFluido *campos,
-                      float aspecto);
+void inject_sources(InkSource *sources, int count, FluidFields *fields,
+                    float aspect);
 
 /*
- * Multiplica la tinta por un factor menor que 1 para que se desvanezca poco a
- * poco; sin esto la pantalla terminaria saturada de blanco.
+ * Multiplies the ink by a factor below 1 so it fades out gradually; without
+ * this the screen would end up saturated white.
  */
-void disipar_tinta(CamposFluido *campos);
+void dissipate_ink(FluidFields *fields);
 
 #endif /* SOURCES_H */

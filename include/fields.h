@@ -2,37 +2,37 @@
 #define FIELDS_H
 
 /* ===========================================================================
- * campos.h
- * Reserva, liberacion y limpieza de los campos de la simulacion.
+ * fields.h
+ * Allocation, freeing and clearing of the simulation fields.
  * ======================================================================== */
 
 /*
- * Estructura: CamposFluido
- * Todos los campos escalares y vectoriales de la simulacion. Cada campo tiene
- * un buffer "actual" y uno "previo" que se intercambian entre operadores.
- * La tinta se lleva en tres canales independientes (RGB) para poder mezclar
- * colores en pantalla.
+ * Struct: FluidFields
+ * All the scalar and vector fields of the simulation. Each field has a
+ * "current" buffer and a "previous" one, swapped between operators. Ink is
+ * carried in three independent channels (RGB) so colors can mix on screen.
  */
 typedef struct {
-    float *vel_x,   *vel_y;      /* campo de velocidad actual                 */
-    float *vel_x_p, *vel_y_p;    /* velocidad previa / acumulador de fuerzas  */
-    float *tinta_r, *tinta_g, *tinta_b;      /* densidad de tinta por canal   */
-    float *tinta_r_p, *tinta_g_p, *tinta_b_p;/* buffers previos de tinta      */
-    float *presion, *divergencia;/* auxiliares del paso de proyeccion         */
-    int    celdas_total;         /* (N+2)*(N+2)                               */
-} CamposFluido;
+    float *vel_x,   *vel_y;      /* current velocity field                    */
+    float *vel_x_p, *vel_y_p;    /* previous velocity / force accumulator     */
+    float *ink_r, *ink_g, *ink_b;        /* ink density per channel           */
+    float *ink_r_p, *ink_g_p, *ink_b_p;  /* previous ink buffers              */
+    float *pressure, *divergence;/* projection step scratch fields            */
+    int    total_cells;          /* (N+2)*(N+2)                               */
+} FluidFields;
 
 /*
- * Reserva e inicializa en cero todos los campos de la simulacion.
- * Retorna 1 si toda la memoria se obtuvo correctamente, 0 si alguna reserva
- * fallo (en cuyo caso libera lo ya reservado antes de retornar).
+ * Allocates and zero-initializes every simulation field.
+ * Returns 1 if all memory was obtained successfully, 0 if some allocation
+ * failed (in which case whatever was already allocated is freed before
+ * returning).
  */
-int reservar_campos(CamposFluido *campos, int resolucion);
+int allocate_fields(FluidFields *fields, int resolution);
 
-/* Libera todos los campos y deja los punteros en NULL. */
-void liberar_campos(CamposFluido *campos);
+/* Frees every field and sets the pointers to NULL. */
+void free_fields(FluidFields *fields);
 
-/* Pone todos los campos en cero (usado al reiniciar con la tecla R). */
-void limpiar_campos(CamposFluido *campos);
+/* Zeroes out every field (used when resetting with the R key). */
+void clear_fields(FluidFields *fields);
 
 #endif /* FIELDS_H */

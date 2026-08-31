@@ -4,47 +4,46 @@
 #include <SDL2/SDL.h>
 
 /* ===========================================================================
- * fondo.h
- * Fondo del screensaver: un campo de estrellas fijas con titileo, dibujado
- * con el renderer de SDL (no con la textura de tinta) justo antes de volcar
- * la tinta encima. La textura de tinta ahora se dibuja con alfa proporcional
- * al brillo (ver render.c), asi que donde no hay tinta el fondo se ve.
+ * background.h
+ * Screensaver background: a field of fixed, twinkling stars, drawn with
+ * SDL's renderer (not the ink texture) right before the ink is drawn on
+ * top. The ink texture is now drawn with alpha proportional to brightness
+ * (see render.c), so the background shows through wherever there's no ink.
  * ======================================================================== */
 
-#define FONDO_ESTRELLAS_CANTIDAD 220
+#define BACKGROUND_STARS_COUNT 220
 
-/* Color base del fondo: un azul/purpura muy oscuro en vez de negro plano,
- * para dar sensacion de profundidad sin competir con los colores de la
- * tinta. Se aplica como color de SDL_RenderClear (ver main.c). */
-#define FONDO_COLOR_R 6
-#define FONDO_COLOR_G 8
-#define FONDO_COLOR_B 20
+/* Base background color: a very dark blue/purple instead of flat black, to
+ * give a sense of depth without competing with the ink colors. Applied as
+ * the SDL_RenderClear color (see main.c). */
+#define BACKGROUND_COLOR_R 6
+#define BACKGROUND_COLOR_G 8
+#define BACKGROUND_COLOR_B 20
 
 typedef struct {
-    float x, y;         /* posicion fija en pixeles de pantalla            */
-    float brillo_base;  /* brillo maximo del titileo, en [0,1]             */
-    float fase;         /* fase actual del titileo (radianes)              */
-    float vel_fase;      /* velocidad angular del titileo (rad/frame)       */
-    int   radio;         /* tamano en pixeles (1 = un punto, 2 = 2x2, etc.) */
-} Estrella;
+    float x, y;          /* fixed position in screen pixels                 */
+    float base_brightness;/* maximum twinkle brightness, in [0,1]            */
+    float phase;          /* current twinkle phase (radians)                 */
+    float phase_speed;    /* twinkle angular speed (rad/frame)               */
+    int   radius;         /* size in pixels (1 = one dot, 2 = 2x2, etc.)     */
+} Star;
 
 /*
- * Coloca "cantidad" estrellas en posiciones aleatorias dentro de la ventana
- * (ancho x alto en pixeles), con brillo base, fase inicial y velocidad de
- * titileo tambien aleatorios.
+ * Places "count" stars at random positions within the window (width x
+ * height in pixels), with random base brightness, initial phase and
+ * twinkle speed too.
  */
-void inicializar_fondo(Estrella *estrellas, int cantidad, int ancho, int alto);
+void init_background(Star *stars, int count, int width, int height);
 
-/* Avanza la fase de titileo de cada estrella un frame. */
-void actualizar_fondo(Estrella *estrellas, int cantidad);
+/* Advances every star's twinkle phase by one frame. */
+void update_background(Star *stars, int count);
 
 /*
- * Pinta las estrellas directamente con el renderer de SDL. Debe llamarse
- * DESPUES de SDL_RenderClear (que ya dejo el color base) y ANTES de copiar
- * la textura de tinta (que ahora es semi-transparente donde no hay tinta,
- * dejando ver lo que se dibuje aqui).
+ * Paints the stars directly with SDL's renderer. Must be called AFTER
+ * SDL_RenderClear (which already laid down the base color) and BEFORE
+ * copying the ink texture (which is now semi-transparent wherever there's
+ * no ink, letting whatever is drawn here show through).
  */
-void dibujar_fondo(SDL_Renderer *renderizador, const Estrella *estrellas,
-                   int cantidad);
+void draw_background(SDL_Renderer *renderer, const Star *stars, int count);
 
 #endif /* BACKGROUND_H */

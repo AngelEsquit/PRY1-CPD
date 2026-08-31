@@ -52,14 +52,14 @@ mas abajo.
 | `-p`, `-F` | desactivado por default | Pantalla completa (solo en `sequential`/`master` por ahora). |
 | `-h` | — | Ayuda. |
 
-### Constantes (`include/comun.h`, `include/fuentes.h`, `src/secuencial/ncuerpos/ncuerpos.c`)
+### Constantes (`include/common.h`, `include/sources.h`, `src/nbody.c`)
 
 Estas no son ajustables por CLI, pero son relevantes si se quiere variar el
 "blur"/comportamiento en experimentos mas finos (requiere recompilar):
 
 | Constante | Valor | Que hace |
 |---|---|---|
-| `ITER_GAUSS_SEIDEL` | `20` | Iteraciones del solver lineal por llamada — sube linealmente el costo de `resolver_lineal()`, que es el hotspot principal. |
+| `GAUSS_SEIDEL_ITERS` | `20` | Iteraciones del solver lineal por llamada — sube linealmente el costo de `solve_linear()`, que es el hotspot principal. |
 | `DISIPACION` | `0.995` | Retencion de tinta por frame. |
 | `BRILLO_FACTOR` / `CONTRASTE_FACTOR` / `SATURACION_FACTOR` | `0.6` / `1.0` / `2.4` | Solo afectan el render (color), no el costo computacional. |
 | `FUENTE_RADIO_BASE` / `FUENTE_SIGMA_BASE` | `2` / `1.1` | Tamano del vecindario de inyeccion gaussiana por fuente; escala con `-n` via `fuente_escala()`. |
@@ -78,7 +78,7 @@ Cada fila es un sitio de paralelizacion real en el codigo. "Como
 implementarlo" describe el patron para poder reproducirlo si se hace una
 rama incremental que las va agregando una por una.
 
-### 1. `agregar_fuente()` — `src/secuencial/fluidos/fuentes.c`
+### 1. `add_source()` — `src/sources.c`
 
 - **Que hace**: suma el termino fuente (velocidad/tinta inyectada) a cada
   celda, `O(N^2)`, sin dependencias entre celdas.
@@ -89,15 +89,15 @@ rama incremental que las va agregando una por una.
 - **Como implementarlo**: agregar el pragma justo antes del `for`. Nada mas
   cambia.
 
-### 2. `disipar_tinta()` — `src/secuencial/fluidos/fuentes.c`
+### 2. `dissipate_ink()` — `src/sources.c`
 
 - Mismo patron que (1): `#pragma omp parallel for schedule(dynamic, 16)`
   sobre un loop plano e independiente por celda (`tinta *= DISIPACION`).
 
-### 3. Solver de presion/difusion: Gauss-Seidel -> red-black — `src/secuencial/fluidos/solver.c`
+### 3. Solver de presion/difusion: Gauss-Seidel -> red-black — `src/solver.c`
 
 - **Que hace**: resuelve el sistema lineal disperso de la difusion implicita
-  y de la proyeccion de Hodge, iterativamente (`ITER_GAUSS_SEIDEL = 20`
+  y de la proyeccion de Hodge, iterativamente (`GAUSS_SEIDEL_ITERS = 20`
   iteraciones por llamada, se llama varias veces por frame). Es el
   **hotspot principal** del programa.
 - **El problema**: Gauss-Seidel fila por fila lee valores ya actualizados en
@@ -111,13 +111,13 @@ rama incremental que las va agregando una por una.
   pisarse. Cada iteracion pasa a ser: actualizar todas las "rojas", barrera,
   actualizar todas las "negras", barrera.
 - **Como implementarlo**:
-  1. Separar el cuerpo del loop en una funcion `relajar_color(campo,
+  1. Separar el cuerpo del loop en una funcion `relax_color(campo,
      campo_previo, a, inverso_c, paridad)` que recorre solo las celdas de
      una paridad (`inicio = ((1+j)%2 == paridad) ? 1 : 2`, luego `i += 2`).
-  2. Envolver las `ITER_GAUSS_SEIDEL` iteraciones en **una sola** region
+  2. Envolver las `GAUSS_SEIDEL_ITERS` iteraciones en **una sola** region
      `#pragma omp parallel` (abrir/cerrar el team de hilos tiene costo fijo;
      hacerlo una vez en vez de 2*20 veces importa en mallas chicas).
-  3. Dentro, cada `relajar_color()` usa `#pragma omp for schedule(dynamic,
+  3. Dentro, cada `relax_color()` usa `#pragma omp for schedule(dynamic,
      16)` (barrera implicita automatica al final).
   4. Aplicar la condicion de frontera con `#pragma omp single` (un solo hilo
      la aplica mientras los demas esperan en la barrera implicita del
@@ -127,7 +127,7 @@ rama incremental que las va agregando una por una.
   converge un poco mas rapido), asi que el comportamiento visual no deberia
   notarse distinto entre `sequential` y `parallel-omp`.
 
-### 4. `advectar()` — `src/secuencial/fluidos/solver.c`
+### 4. `advect()` — `src/solver.c`
 
 - **Que hace**: adveccion semi-Lagrangiana, cada celda destino solo *lee*
   `campo_previo` (no lo modifica) e interpola — sin dependencias entre
@@ -141,13 +141,13 @@ rama incremental que las va agregando una por una.
   las variables escalares temporales del cuerpo del loop (`i0,i1,j0,j1,
   origen_x,origen_y,pesos...`) para que cada hilo tenga su propia copia.
 
-### 5. Proyeccion de Hodge (divergencia + gradiente) — `src/secuencial/fluidos/solver.c`
+### 5. Proyeccion de Hodge (divergencia + gradiente) — `src/solver.c`
 
 - Dos loops mas con el mismo patron que (4): cada celda destino es
   independiente. `#pragma omp parallel for collapse(2) schedule(dynamic,
   16)` en cada uno.
 
-### 6. `renderizar_tinta()` — `src/secuencial/render/render.c`
+### 6. `render_ink()` — `src/render.c`
 
 - **Que hace**: vuelca la densidad de tinta a la textura SDL, un pixel de
   textura por pixel de pantalla — cada pixel de salida es independiente.
@@ -190,7 +190,7 @@ al-final.
 
 El eje que mas importa variar en cada bateria es **`-n`** (tamano de
 celda/resolucion de la malla) porque domina el costo (`O(N^2)` por
-iteracion, y son `ITER_GAUSS_SEIDEL` iteraciones por paso, varias veces por
+iteracion, y son `GAUSS_SEIDEL_ITERS` iteraciones por paso, varias veces por
 frame). El eje secundario es **`-f`** (cantidad de fuentes/cuerpos), que solo
 pesa cuando el n-body esta activo (`O(F^2)` sin arbol, `O(F log F)` con
 arbol). Los demas flags (viscosidad, difusion, ventana, etc.) no cambian el
@@ -206,7 +206,7 @@ se implementan (no estan implementados todavia, es la lista de que sigue):
       bruta, solver Gauss-Seidel fila por fila. *(este es el punto de
       partida, ya tiene su propia fila en la tabla maestra)*
 - [ ] **Paso 1 — arbol para n-body (Barnes-Hut)**: reemplazar el loop
-      O(F^2) de `actualizar_fuentes_nbody()` (`ncuerpos.c`) por un quadtree
+      O(F^2) de `update_nbody_sources()` (`nbody.c`) por un quadtree
       con aproximacion por centro de masa, O(F log F). Sigue siendo
       secuencial (sin OpenMP todavia) — el punto es medir cuanto gana el
       *algoritmo* solo, antes de meterle hilos. Para que el efecto se note

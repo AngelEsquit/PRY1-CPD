@@ -1,45 +1,45 @@
 /* ===========================================================================
  * main.c
  * ---------------------------------------------------------------------------
- * Screensaver de fluidos basado en las ecuaciones de Navier-Stokes para
- * fluidos incompresibles, resueltas con el metodo "Stable Fluids" de Jos Stam.
+ * Fluid screensaver based on the Navier-Stokes equations for incompressible
+ * fluids, solved with Jos Stam's "Stable Fluids" method.
  *
- * VERSION SECUENCIAL (base de comparacion para la version paralela con OpenMP).
+ * SEQUENTIAL VERSION (comparison baseline for the OpenMP parallel version).
  *
- * Modelo fisico
- * -------------
- * Se resuelven las dos ecuaciones acopladas sobre una malla regular 2D:
+ * Physical model
+ * --------------
+ * The two coupled equations are solved over a regular 2D grid:
  *
- *   Velocidad:  du/dt = -(u . grad)u + visc * lap(u) + f      con div(u) = 0
- *   Tinta:      dp/dt = -(u . grad)p + diff * lap(p) + s
+ *   Velocity:  du/dt = -(u . grad)u + visc * lap(u) + f      with div(u) = 0
+ *   Ink:       dp/dt = -(u . grad)p + diff * lap(p) + s
  *
- * Cada paso de tiempo se descompone en cuatro operadores (Stam, 1999):
- *   1. add_source  -> aplica las fuerzas externas f y las fuentes de tinta s
- *   2. diffuse     -> resuelve la difusion viscosa de forma implicita
- *   3. advect      -> transporta el campo con trazado semi-Lagrangiano
- *   4. project     -> proyeccion de Hodge: elimina la divergencia (incompresible)
+ * Each time step is broken down into four operators (Stam, 1999):
+ *   1. add_source  -> applies the external forces f and the ink sources s
+ *   2. diffuse     -> solves viscous diffusion implicitly
+ *   3. advect      -> transports the field via semi-Lagrangian tracing
+ *   4. project     -> Hodge projection: removes divergence (incompressible)
  *
- * Los pasos 2 y 4 requieren resolver un sistema lineal disperso; aqui se usa
- * relajacion iterativa de Gauss-Seidel (ver nota en solver.c sobre su impacto
- * en la version paralela).
+ * Steps 2 and 4 require solving a sparse linear system; here iterative
+ * Gauss-Seidel relaxation is used (see the note in solver.c on its impact
+ * on the parallel version).
  *
- * Trigonometria: cada fuente de tinta inyecta velocidad en una direccion que
- * rota en el tiempo, calculada con sin() y cos() sobre una fase propia
- * (ver fuentes.c).
+ * Trigonometry: each ink source injects velocity in a direction that
+ * rotates over time, computed with sin() and cos() over its own phase
+ * (see sources.c).
  *
- * Modulos del proyecto (ver include/ y src/):
- *   comun.h              - constantes, macros e indexacion de la malla
- *   utilidades.{h,c}     - funciones de proposito general
- *   configuracion.{h,c}  - argumentos de linea de comandos
- *   campos.{h,c}         - memoria de los campos de la simulacion
- *   fuentes.{h,c}        - fuentes de tinta
- *   ncuerpos.{h,c}       - movimiento de las fuentes (sistema de n-cuerpos)
- *   solver.{h,c}         - nucleo numerico (Stable Fluids)
- *   render.{h,c}         - volcado a textura SDL
- *   main.c               - programa principal (este archivo)
+ * Project modules (see include/ and src/):
+ *   common.h        - constants, macros and grid indexing
+ *   utils.{h,c}     - general-purpose functions
+ *   config.{h,c}    - command-line arguments
+ *   fields.{h,c}    - simulation field memory
+ *   sources.{h,c}   - ink sources
+ *   nbody.{h,c}     - source movement (n-body system)
+ *   solver.{h,c}    - numerical core (Stable Fluids)
+ *   render.{h,c}    - dump to an SDL texture
+ *   main.c          - main program (this file)
  *
- * Compilacion:  make            (ver Makefile)
- * Uso:          ./Screensaver -n 128 -f 6
+ * Build:  make            (see Makefile)
+ * Usage:  ./Screensaver -n 128 -f 6
  * ===========================================================================
  */
 
@@ -56,235 +56,236 @@
 #include "render.h"
 #include "background.h"
 
-/* Resolucion de la malla; global para que la macro IX() sea legible.
- * Unica definicion del proyecto (declarada extern en comun.h para que el
- * resto de los modulos la puedan usar). */
-int malla_n = MALLA_DEFAULT;
+/* Grid resolution; global so the IX() macro stays readable. The project's
+ * only definition (declared extern in common.h so every other module can
+ * use it). */
+int grid_n = GRID_DEFAULT;
 
 int main(int argc, char *argv[])
 {
-    Configuracion  config;
-    CamposFluido   campos;
-    FuenteTinta   *fuentes = NULL;
-    Estrella      *estrellas = NULL;
-    SDL_Window    *ventana = NULL;
-    SDL_Renderer  *renderizador = NULL;
-    SDL_Texture   *textura = NULL;
-    SDL_Event      evento;
+    Config         config;
+    FluidFields    fields;
+    InkSource     *sources = NULL;
+    Star          *stars = NULL;
+    SDL_Window    *window = NULL;
+    SDL_Renderer  *renderer = NULL;
+    SDL_Texture   *texture = NULL;
+    SDL_Event      event;
 
-    int    ejecutando = 1;
-    int    codigo_salida = EXIT_SUCCESS;
-    int    frames_acumulados = 0;
-    Uint64 ticks_previos, ticks_actuales, frecuencia_reloj;
-    Uint64 ticks_ultimo_reporte;
-    double segundos_transcurridos, fps_actual = 0.0;
-    char   titulo_ventana[128];
+    int    running = 1;
+    int    exit_code = EXIT_SUCCESS;
+    int    accumulated_frames = 0;
+    Uint64 prev_ticks, current_ticks, clock_frequency;
+    Uint64 last_report_ticks;
+    double elapsed_seconds, current_fps = 0.0;
+    char   window_title[128];
 
-    /* --- 1. Argumentos --------------------------------------------------- */
-    int resultado_args = procesar_argumentos(argc, argv, &config);
-    if (resultado_args == -1) return EXIT_SUCCESS;   /* se pidio la ayuda    */
-    if (resultado_args ==  0) return EXIT_FAILURE;   /* argumentos invalidos */
+    /* --- 1. Arguments ------------------------------------------------------ */
+    int args_result = parse_arguments(argc, argv, &config);
+    if (args_result == -1) return EXIT_SUCCESS;   /* help was requested       */
+    if (args_result ==  0) return EXIT_FAILURE;   /* invalid arguments        */
 
-    malla_n = config.malla_n;   /* fija la resolucion usada por la macro IX() */
-    srand(config.semilla);
+    grid_n = config.grid_n;   /* sets the resolution used by the IX() macro  */
+    srand(config.seed);
 
-    /* --- 2. Inicializacion de SDL y deteccion de pantalla ---------------- */
+    /* --- 2. SDL init and screen detection ----------------------------------*/
     if (SDL_Init(SDL_INIT_VIDEO) != 0) {
-        fprintf(stderr, "Error: no se pudo inicializar SDL: %s\n", SDL_GetError());
+        fprintf(stderr, "Error: could not initialize SDL: %s\n", SDL_GetError());
         return EXIT_FAILURE;
     }
 
-    if (config.pantalla_completa) {
+    if (config.fullscreen) {
         SDL_DisplayMode dm;
         if (SDL_GetCurrentDisplayMode(0, &dm) == 0 || SDL_GetDesktopDisplayMode(0, &dm) == 0) {
-            config.ventana_ancho = dm.w;
-            config.ventana_alto  = dm.h;
+            config.window_width  = dm.w;
+            config.window_height = dm.h;
         }
     }
 
-    printf("Simulacion de fluidos (Navier-Stokes) - version SECUENCIAL\n");
-    printf("  Malla        : %d x %d celdas (%d celdas interiores)\n",
-           config.malla_n, config.malla_n, config.malla_n * config.malla_n);
-    printf("  Fuentes      : %d\n", config.num_fuentes);
-    printf("  Ventana      : %d x %d px%s\n",
-           config.ventana_ancho, config.ventana_alto,
-           config.pantalla_completa ? " (pantalla completa)" : "");
-    printf("  Semilla      : %u\n", config.semilla);
+    printf("Fluid simulation (Navier-Stokes) - SEQUENTIAL version\n");
+    printf("  Grid         : %d x %d cells (%d interior cells)\n",
+           config.grid_n, config.grid_n, config.grid_n * config.grid_n);
+    printf("  Sources      : %d\n", config.num_sources);
+    printf("  Window       : %d x %d px%s\n",
+           config.window_width, config.window_height,
+           config.fullscreen ? " (fullscreen)" : "");
+    printf("  Seed         : %u\n", config.seed);
     printf("  dt / visc / diff : %.3f / %.5f / %.5f\n",
-           (double)config.dt, (double)config.viscosidad, (double)config.difusion);
-    printf("  Sistema n-cuerpos: %s\n\n", config.nbody ? "activado" : "desactivado");
+           (double)config.dt, (double)config.viscosity, (double)config.diffusion);
+    printf("  N-body system: %s\n\n", config.nbody ? "on" : "off");
 
-    /* --- 3. Memoria de los campos ---------------------------------------- */
-    if (!reservar_campos(&campos, config.malla_n)) {
+    /* --- 3. Field memory ---------------------------------------------------*/
+    if (!allocate_fields(&fields, config.grid_n)) {
         SDL_Quit();
         return EXIT_FAILURE;
     }
 
-    fuentes = (FuenteTinta *)malloc((size_t)config.num_fuentes *
-                                    sizeof(FuenteTinta));
-    if (fuentes == NULL) {
-        fprintf(stderr, "Error: no se pudo reservar memoria para las fuentes.\n");
+    sources = (InkSource *)malloc((size_t)config.num_sources *
+                                  sizeof(InkSource));
+    if (sources == NULL) {
+        fprintf(stderr, "Error: could not allocate memory for the sources.\n");
         SDL_Quit();
-        liberar_campos(&campos);
+        free_fields(&fields);
         return EXIT_FAILURE;
     }
-    inicializar_fuentes(fuentes, config.num_fuentes, config.malla_n);
+    init_sources(sources, config.num_sources, config.grid_n);
 
-    estrellas = (Estrella *)malloc((size_t)FONDO_ESTRELLAS_CANTIDAD *
-                                   sizeof(Estrella));
-    if (estrellas == NULL) {
-        fprintf(stderr, "Error: no se pudo reservar memoria para el fondo.\n");
+    stars = (Star *)malloc((size_t)BACKGROUND_STARS_COUNT *
+                           sizeof(Star));
+    if (stars == NULL) {
+        fprintf(stderr, "Error: could not allocate memory for the background.\n");
         SDL_Quit();
-        free(fuentes);
-        liberar_campos(&campos);
+        free(sources);
+        free_fields(&fields);
         return EXIT_FAILURE;
     }
-    inicializar_fondo(estrellas, FONDO_ESTRELLAS_CANTIDAD,
-                      config.ventana_ancho, config.ventana_alto);
+    init_background(stars, BACKGROUND_STARS_COUNT,
+                    config.window_width, config.window_height);
 
-    /* --- 4. Creacion de ventana y renderizador --------------------------- */
-    /* Filtrado lineal para que la malla escalada no se vea pixelada */
+    /* --- 4. Window and renderer creation -----------------------------------*/
+    /* Linear filtering so the scaled grid doesn't look pixelated */
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");
 
-    Uint32 flags_ventana = SDL_WINDOW_SHOWN;
-    if (config.pantalla_completa) {
-        flags_ventana |= SDL_WINDOW_FULLSCREEN_DESKTOP;
+    Uint32 window_flags = SDL_WINDOW_SHOWN;
+    if (config.fullscreen) {
+        window_flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
         SDL_ShowCursor(SDL_DISABLE);
     }
 
-    ventana = SDL_CreateWindow("Screensaver de fluidos - secuencial",
-                               SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-                               config.ventana_ancho, config.ventana_alto,
-                               flags_ventana);
-    if (ventana == NULL) {
-        fprintf(stderr, "Error: no se pudo crear la ventana: %s\n", SDL_GetError());
-        codigo_salida = EXIT_FAILURE;
-        goto limpieza;
+    window = SDL_CreateWindow("Fluid screensaver - sequential",
+                              SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+                              config.window_width, config.window_height,
+                              window_flags);
+    if (window == NULL) {
+        fprintf(stderr, "Error: could not create the window: %s\n", SDL_GetError());
+        exit_code = EXIT_FAILURE;
+        goto cleanup;
     }
 
-    /* Obtiene el tamano real asignado por SDL */
-    SDL_GetWindowSize(ventana, &config.ventana_ancho, &config.ventana_alto);
+    /* Gets the actual size SDL assigned */
+    SDL_GetWindowSize(window, &config.window_width, &config.window_height);
 
-    renderizador = SDL_CreateRenderer(ventana, -1, SDL_RENDERER_ACCELERATED);
-    if (renderizador == NULL) {
-        /* Reintento por software si no hay aceleracion disponible */
-        fprintf(stderr, "Aviso: sin renderizador acelerado (%s). "
-                        "Se intenta por software.\n", SDL_GetError());
-        renderizador = SDL_CreateRenderer(ventana, -1, SDL_RENDERER_SOFTWARE);
+    renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+    if (renderer == NULL) {
+        /* Retry with software rendering if acceleration isn't available */
+        fprintf(stderr, "Notice: no accelerated renderer (%s). "
+                        "Trying software.\n", SDL_GetError());
+        renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_SOFTWARE);
     }
-    if (renderizador == NULL) {
-        fprintf(stderr, "Error: no se pudo crear el renderizador: %s\n",
+    if (renderer == NULL) {
+        fprintf(stderr, "Error: could not create the renderer: %s\n",
                 SDL_GetError());
-        codigo_salida = EXIT_FAILURE;
-        goto limpieza;
+        exit_code = EXIT_FAILURE;
+        goto cleanup;
     }
 
-    textura = SDL_CreateTexture(renderizador, SDL_PIXELFORMAT_ARGB8888,
+    texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888,
                                 SDL_TEXTUREACCESS_STREAMING,
-                                config.ventana_ancho, config.ventana_alto);
-    if (textura == NULL) {
-        fprintf(stderr, "Error: no se pudo crear la textura: %s\n", SDL_GetError());
-        codigo_salida = EXIT_FAILURE;
-        goto limpieza;
+                                config.window_width, config.window_height);
+    if (texture == NULL) {
+        fprintf(stderr, "Error: could not create the texture: %s\n", SDL_GetError());
+        exit_code = EXIT_FAILURE;
+        goto cleanup;
     }
-    /* La textura de tinta ahora lleva alfa proporcional al brillo (ver
-     * render.c); sin esto SDL_RenderCopy la trataria como opaca y taparia
-     * el fondo (estrellas) por completo sin importar el alfa del pixel. */
-    SDL_SetTextureBlendMode(textura, SDL_BLENDMODE_BLEND);
+    /* The ink texture now carries alpha proportional to brightness (see
+     * render.c); without this SDL_RenderCopy would treat it as opaque and
+     * fully cover the background (stars) regardless of pixel alpha. */
+    SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
 
-    /* --- 4. Ciclo principal ---------------------------------------------- */
-    frecuencia_reloj     = SDL_GetPerformanceFrequency();
-    ticks_previos        = SDL_GetPerformanceCounter();
-    ticks_ultimo_reporte = ticks_previos;
+    /* --- 4. Main loop -------------------------------------------------------*/
+    clock_frequency    = SDL_GetPerformanceFrequency();
+    prev_ticks         = SDL_GetPerformanceCounter();
+    last_report_ticks  = prev_ticks;
 
-    while (ejecutando) {
-        /* 4.1 Eventos de ventana y teclado */
-        while (SDL_PollEvent(&evento)) {
-            if (evento.type == SDL_QUIT) {
-                ejecutando = 0;
-            } else if (evento.type == SDL_KEYDOWN) {
-                SDL_Keycode tecla = evento.key.keysym.sym;
-                if (tecla == SDLK_ESCAPE || tecla == SDLK_q) {
-                    ejecutando = 0;
-                } else if (tecla == SDLK_r) {
-                    limpiar_campos(&campos);
-                    inicializar_fuentes(fuentes, config.num_fuentes,
-                                        config.malla_n);
+    while (running) {
+        /* 4.1 Window and keyboard events */
+        while (SDL_PollEvent(&event)) {
+            if (event.type == SDL_QUIT) {
+                running = 0;
+            } else if (event.type == SDL_KEYDOWN) {
+                SDL_Keycode key = event.key.keysym.sym;
+                if (key == SDLK_ESCAPE || key == SDLK_q) {
+                    running = 0;
+                } else if (key == SDLK_r) {
+                    clear_fields(&fields);
+                    init_sources(sources, config.num_sources,
+                                config.grid_n);
                 }
             }
         }
 
-        /* 4.2 Un paso de simulacion */
+        /* 4.2 One simulation step */
         if (config.nbody) {
-            actualizar_fuentes_nbody(fuentes, config.num_fuentes, config.malla_n);
+            update_nbody_sources(sources, config.num_sources, config.grid_n);
         }
-        inyectar_fuentes(fuentes, config.num_fuentes, &campos,
-                         (float)config.ventana_ancho / (float)config.ventana_alto);
+        inject_sources(sources, config.num_sources, &fields,
+                       (float)config.window_width / (float)config.window_height);
 
-        paso_velocidad(&campos, config.viscosidad, config.dt);
+        velocity_step(&fields, config.viscosity, config.dt);
 
-        paso_tinta(&campos.tinta_r, &campos.tinta_r_p,
-                   campos.vel_x, campos.vel_y,
-                   config.difusion, config.dt, campos.celdas_total);
-        paso_tinta(&campos.tinta_g, &campos.tinta_g_p,
-                   campos.vel_x, campos.vel_y,
-                   config.difusion, config.dt, campos.celdas_total);
-        paso_tinta(&campos.tinta_b, &campos.tinta_b_p,
-                   campos.vel_x, campos.vel_y,
-                   config.difusion, config.dt, campos.celdas_total);
+        ink_step(&fields.ink_r, &fields.ink_r_p,
+                fields.vel_x, fields.vel_y,
+                config.diffusion, config.dt, fields.total_cells);
+        ink_step(&fields.ink_g, &fields.ink_g_p,
+                fields.vel_x, fields.vel_y,
+                config.diffusion, config.dt, fields.total_cells);
+        ink_step(&fields.ink_b, &fields.ink_b_p,
+                fields.vel_x, fields.vel_y,
+                config.diffusion, config.dt, fields.total_cells);
 
-        disipar_tinta(&campos);
+        dissipate_ink(&fields);
 
-        actualizar_fondo(estrellas, FONDO_ESTRELLAS_CANTIDAD);
+        update_background(stars, BACKGROUND_STARS_COUNT);
 
-        /* 4.3 Dibujo: primero el fondo (color base + estrellas) directo con
-         * el renderer, y despues la tinta encima; como la textura de tinta
-         * ahora es semi-transparente donde no hay tinta (ver render.c), el
-         * fondo se ve a traves de esas zonas en vez de quedar tapado. */
-        renderizar_tinta(textura, &campos, config.ventana_ancho, config.ventana_alto);
+        /* 4.3 Drawing: first the background (base color + stars) straight
+         * through the renderer, then the ink on top; since the ink texture
+         * is now semi-transparent wherever there's no ink (see render.c),
+         * the background shows through those areas instead of being
+         * covered. */
+        render_ink(texture, &fields, config.window_width, config.window_height);
 
-        SDL_SetRenderDrawColor(renderizador, FONDO_COLOR_R, FONDO_COLOR_G,
-                               FONDO_COLOR_B, 255);
-        SDL_RenderClear(renderizador);
-        dibujar_fondo(renderizador, estrellas, FONDO_ESTRELLAS_CANTIDAD);
-        SDL_RenderCopy(renderizador, textura, NULL, NULL);
-        SDL_RenderPresent(renderizador);
+        SDL_SetRenderDrawColor(renderer, BACKGROUND_COLOR_R, BACKGROUND_COLOR_G,
+                               BACKGROUND_COLOR_B, 255);
+        SDL_RenderClear(renderer);
+        draw_background(renderer, stars, BACKGROUND_STARS_COUNT);
+        SDL_RenderCopy(renderer, texture, NULL, NULL);
+        SDL_RenderPresent(renderer);
 
-        /* 4.4 Medicion de FPS (promedio sobre ventanas de ~0.5 s) */
-        frames_acumulados++;
-        ticks_actuales = SDL_GetPerformanceCounter();
-        segundos_transcurridos = (double)(ticks_actuales - ticks_ultimo_reporte) /
-                                 (double)frecuencia_reloj;
+        /* 4.4 FPS measurement (averaged over ~0.5 s windows) */
+        accumulated_frames++;
+        current_ticks = SDL_GetPerformanceCounter();
+        elapsed_seconds = (double)(current_ticks - last_report_ticks) /
+                          (double)clock_frequency;
 
-        if (segundos_transcurridos >= 0.5) {
-            fps_actual = (double)frames_acumulados / segundos_transcurridos;
-            frames_acumulados = 0;
-            ticks_ultimo_reporte = ticks_actuales;
+        if (elapsed_seconds >= 0.5) {
+            current_fps = (double)accumulated_frames / elapsed_seconds;
+            accumulated_frames = 0;
+            last_report_ticks = current_ticks;
 
-            snprintf(titulo_ventana, sizeof(titulo_ventana),
-                     "Fluidos secuencial | N=%d | fuentes=%d | FPS= %.2f",
-                     config.malla_n, config.num_fuentes, fps_actual);
-            SDL_SetWindowTitle(ventana, titulo_ventana);
+            snprintf(window_title, sizeof(window_title),
+                     "Sequential fluids | N=%d | sources=%d | FPS= %.2f",
+                     config.grid_n, config.num_sources, current_fps);
+            SDL_SetWindowTitle(window, window_title);
 
-            printf("FPS= %.2f\n", fps_actual);
+            printf("FPS= %.2f\n", current_fps);
             fflush(stdout);
         }
 
-        ticks_previos = ticks_actuales;
+        prev_ticks = current_ticks;
     }
 
-    (void)ticks_previos;  /* se conserva por claridad del ciclo de tiempo */
+    (void)prev_ticks;  /* kept for the timing loop's clarity */
 
-    /* --- 5. Liberacion ordenada de recursos ------------------------------ */
-limpieza:
-    if (textura      != NULL) SDL_DestroyTexture(textura);
-    if (renderizador != NULL) SDL_DestroyRenderer(renderizador);
-    if (ventana      != NULL) SDL_DestroyWindow(ventana);
+    /* --- 5. Orderly resource release ---------------------------------------*/
+cleanup:
+    if (texture  != NULL) SDL_DestroyTexture(texture);
+    if (renderer != NULL) SDL_DestroyRenderer(renderer);
+    if (window   != NULL) SDL_DestroyWindow(window);
     SDL_Quit();
 
-    free(fuentes);
-    free(estrellas);
-    liberar_campos(&campos);
+    free(sources);
+    free(stars);
+    free_fields(&fields);
 
-    return codigo_salida;
+    return exit_code;
 }

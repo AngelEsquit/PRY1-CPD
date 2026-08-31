@@ -2,16 +2,16 @@
 
 #include <stdlib.h>
 
-/* Devuelve un flotante pseudoaleatorio uniforme en [minimo, maximo]. */
-float aleatorio_rango(float minimo, float maximo)
+/* Returns a uniform pseudo-random float in [min, max]. */
+float random_range(float min, float max)
 {
-    return minimo + ((float)rand() / (float)RAND_MAX) * (maximo - minimo);
+    return min + ((float)rand() / (float)RAND_MAX) * (max - min);
 }
 
-/* Limita un valor flotante al intervalo [minimo, maximo]. */
-float acotar(float valor, float minimo, float maximo)
+/* Clamps a float value to the interval [min, max]. */
+float clamp(float value, float min, float max)
 {
-    if (valor < minimo) return minimo;
-    if (valor > maximo) return maximo;
-    return valor;
+    if (value < min) return min;
+    if (value > max) return max;
+    return value;
 }

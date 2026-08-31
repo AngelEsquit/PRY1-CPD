@@ -4,70 +4,70 @@
 
 #include <math.h>
 
-void inicializar_fondo(Estrella *estrellas, int cantidad, int ancho, int alto)
+void init_background(Star *stars, int count, int width, int height)
 {
     int e;
 
-    for (e = 0; e < cantidad; e++) {
-        estrellas[e].x = aleatorio_rango(0.0f, (float)(ancho - 1));
-        estrellas[e].y = aleatorio_rango(0.0f, (float)(alto - 1));
+    for (e = 0; e < count; e++) {
+        stars[e].x = random_range(0.0f, (float)(width - 1));
+        stars[e].y = random_range(0.0f, (float)(height - 1));
 
-        /* La mayoria quedan tenues (fondo) y solo unas pocas brillan fuerte
-         * (primer plano), imitando la distribucion real de un cielo
-         * estrellado en vez de un brillo uniforme. */
-        estrellas[e].brillo_base = aleatorio_rango(0.15f, 1.0f) *
-                                    aleatorio_rango(0.15f, 1.0f);
+        /* Most stay dim (background) and only a few shine brightly
+         * (foreground), mimicking the real distribution of a starry sky
+         * instead of uniform brightness. */
+        stars[e].base_brightness = random_range(0.15f, 1.0f) *
+                                    random_range(0.15f, 1.0f);
 
-        estrellas[e].fase     = aleatorio_rango(0.0f, 2.0f * PI);
-        estrellas[e].vel_fase = aleatorio_rango(0.01f, 0.04f);
+        stars[e].phase       = random_range(0.0f, 2.0f * PI);
+        stars[e].phase_speed = random_range(0.01f, 0.04f);
 
-        /* La gran mayoria son de 1 pixel; muy pocas de 2, como si estuvieran
-         * un poco mas cerca. */
-        estrellas[e].radio = (aleatorio_rango(0.0f, 1.0f) > 0.92f) ? 2 : 1;
+        /* The large majority are 1 pixel; very few are 2, as if slightly
+         * closer. */
+        stars[e].radius = (random_range(0.0f, 1.0f) > 0.92f) ? 2 : 1;
     }
 }
 
-void actualizar_fondo(Estrella *estrellas, int cantidad)
+void update_background(Star *stars, int count)
 {
     int e;
 
-    for (e = 0; e < cantidad; e++) {
-        estrellas[e].fase += estrellas[e].vel_fase;
-        if (estrellas[e].fase > 2.0f * PI) {
-            estrellas[e].fase -= 2.0f * PI;
+    for (e = 0; e < count; e++) {
+        stars[e].phase += stars[e].phase_speed;
+        if (stars[e].phase > 2.0f * PI) {
+            stars[e].phase -= 2.0f * PI;
         }
     }
 }
 
-void dibujar_fondo(SDL_Renderer *renderizador, const Estrella *estrellas,
-                   int cantidad)
+void draw_background(SDL_Renderer *renderer, const Star *stars, int count)
 {
     int e;
 
-    /* Titileo suave: oscila entre ~30% y 100% del brillo base en vez de
-     * apagarse del todo, para que parpadee sin llegar a desaparecer. */
-    for (e = 0; e < cantidad; e++) {
-        float titileo = 0.65f + 0.35f * sinf(estrellas[e].fase);
-        float brillo  = estrellas[e].brillo_base * titileo;
-        Uint8 valor   = (Uint8)acotar(brillo * 255.0f, 0.0f, 255.0f);
+    /* Gentle twinkle: oscillates between ~30% and 100% of the base
+     * brightness instead of going fully dark, so it flickers without ever
+     * disappearing. */
+    for (e = 0; e < count; e++) {
+        float twinkle    = 0.65f + 0.35f * sinf(stars[e].phase);
+        float brightness = stars[e].base_brightness * twinkle;
+        Uint8 value       = (Uint8)clamp(brightness * 255.0f, 0.0f, 255.0f);
 
-        /* Blanco ligeramente azulado en vez de blanco puro, para que
-         * combine con el tono frio del color base del fondo. */
-        SDL_SetRenderDrawColor(renderizador,
-                               (Uint8)(valor * 0.85f),
-                               (Uint8)(valor * 0.92f),
-                               valor, 255);
+        /* Slightly bluish white instead of pure white, so it blends with
+         * the background's cool base tone. */
+        SDL_SetRenderDrawColor(renderer,
+                               (Uint8)(value * 0.85f),
+                               (Uint8)(value * 0.92f),
+                               value, 255);
 
-        if (estrellas[e].radio <= 1) {
-            SDL_RenderDrawPoint(renderizador, (int)estrellas[e].x,
-                                (int)estrellas[e].y);
+        if (stars[e].radius <= 1) {
+            SDL_RenderDrawPoint(renderer, (int)stars[e].x,
+                                (int)stars[e].y);
         } else {
             SDL_Rect r;
-            r.x = (int)estrellas[e].x;
-            r.y = (int)estrellas[e].y;
-            r.w = estrellas[e].radio;
-            r.h = estrellas[e].radio;
-            SDL_RenderFillRect(renderizador, &r);
+            r.x = (int)stars[e].x;
+            r.y = (int)stars[e].y;
+            r.w = stars[e].radius;
+            r.h = stars[e].radius;
+            SDL_RenderFillRect(renderer, &r);
         }
     }
 }

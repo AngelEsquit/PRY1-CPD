@@ -6,28 +6,28 @@
 /* ===========================================================================
  * solver.h
  * ---------------------------------------------------------------------------
- * Nucleo numerico del metodo "Stable Fluids": difusion, adveccion,
- * proyeccion y los pasos completos de velocidad y tinta.
+ * Numerical core of the "Stable Fluids" method: diffusion, advection,
+ * projection and the full velocity and ink steps.
  *
- * Este es el modulo que concentra la mayor parte del costo computacional y,
- * por lo tanto, el candidato principal para paralelizar con OpenMP en la
- * siguiente fase del proyecto (ver nota sobre Gauss-Seidel en solver.c).
+ * This is the module that concentrates most of the computational cost and,
+ * therefore, the main candidate for OpenMP parallelization in the next
+ * phase of the project (see the note on Gauss-Seidel in solver.c).
  * ======================================================================== */
 
 /*
- * Paso completo de la densidad de tinta de un canal:
- * fuente -> difusion -> adveccion.
+ * Full step of one channel's ink density:
+ * source -> diffusion -> advection.
  */
-void paso_tinta(float **tinta, float **tinta_previa,
-                const float *vel_x, const float *vel_y,
-                float difusion, float dt, int celdas_total);
+void ink_step(float **ink, float **ink_prev,
+             const float *vel_x, const float *vel_y,
+             float diffusion, float dt, int total_cells);
 
 /*
- * Paso completo del campo de velocidad:
- * fuerzas -> difusion viscosa -> proyeccion -> autoadveccion -> proyeccion.
- * Se proyecta dos veces porque tanto la difusion como la adveccion vuelven a
- * introducir divergencia en el campo.
+ * Full step of the velocity field:
+ * forces -> viscous diffusion -> projection -> self-advection -> projection.
+ * It's projected twice because both diffusion and advection reintroduce
+ * divergence into the field.
  */
-void paso_velocidad(CamposFluido *campos, float viscosidad, float dt);
+void velocity_step(FluidFields *fields, float viscosity, float dt);
 
 #endif /* SOLVER_H */

@@ -6,180 +6,180 @@
 #include <math.h>
 
 /*
- * Inicializa las fuentes con posicion, velocidad, masa, color, fase y fuerza
- * pseudoaleatorias. Las posiciones se mantienen alejadas del borde para que
- * el chorro se desarrolle antes de chocar con los muros.
+ * Initializes the sources with pseudo-random position, velocity, mass,
+ * color, phase and force. Positions are kept away from the border so the
+ * jet can develop before hitting the walls.
  */
-void inicializar_fuentes(FuenteTinta *fuentes, int cantidad, int resolucion)
+void init_sources(InkSource *sources, int count, int resolution)
 {
     int f;
-    const int margen = (resolucion / 8 > 2) ? resolucion / 8 : 2;
+    const int margin = (resolution / 8 > 2) ? resolution / 8 : 2;
 
-    for (f = 0; f < cantidad; f++) {
-        fuentes[f].pos_x = (float)margen +
-            aleatorio_rango(0.0f, (float)(resolucion - 2 * margen));
-        fuentes[f].pos_y = (float)margen +
-            aleatorio_rango(0.0f, (float)(resolucion - 2 * margen));
+    for (f = 0; f < count; f++) {
+        sources[f].pos_x = (float)margin +
+            random_range(0.0f, (float)(resolution - 2 * margin));
+        sources[f].pos_y = (float)margin +
+            random_range(0.0f, (float)(resolution - 2 * margin));
 
-        /* Velocidad inicial pequena: el movimiento principal lo genera la
-         * atraccion gravitacional mutua una vez arranca la simulacion. */
-        fuentes[f].vel_x = aleatorio_rango(-0.3f, 0.3f);
-        fuentes[f].vel_y = aleatorio_rango(-0.3f, 0.3f);
-        fuentes[f].masa  = aleatorio_rango(25.0f, 70.0f);
+        /* Small initial velocity: the main motion comes from mutual
+         * gravitational attraction once the simulation gets going. */
+        sources[f].vel_x = random_range(-0.3f, 0.3f);
+        sources[f].vel_y = random_range(-0.3f, 0.3f);
+        sources[f].mass  = random_range(25.0f, 70.0f);
 
-        /* Color saturado: un canal dominante y los otros dos parciales */
-        fuentes[f].color_r = aleatorio_rango(0.15f, 1.0f);
-        fuentes[f].color_g = aleatorio_rango(0.15f, 1.0f);
-        fuentes[f].color_b = aleatorio_rango(0.15f, 1.0f);
+        /* Saturated color: one dominant channel and two partial ones */
+        sources[f].color_r = random_range(0.15f, 1.0f);
+        sources[f].color_g = random_range(0.15f, 1.0f);
+        sources[f].color_b = random_range(0.15f, 1.0f);
 
-        fuentes[f].fase        = aleatorio_rango(0.0f, 2.0f * PI);
-        fuentes[f].vel_angular = aleatorio_rango(-0.045f, 0.045f);
-        /* Con fuerza en [25,60] el desplazamiento por adveccion junto a la
-         * fuente (dt*malla_n*|v|) llega a ~15-19 celdas por frame: varias
-         * veces el diametro del vecindario de inyeccion, asi que la tinta
-         * "salta" en vez de fluir, y se ve como gotas cayendo en vez de un
-         * chorro continuo. En [6,14] el salto queda en ~5-6 celdas, del
-         * orden del propio vecindario de inyeccion, y frames consecutivos
-         * se solapan en un trazo continuo. */
-        fuentes[f].fuerza      = aleatorio_rango(6.0f, 14.0f);
-        fuentes[f].caudal      = aleatorio_rango(60.0f, 110.0f);
+        sources[f].phase       = random_range(0.0f, 2.0f * PI);
+        sources[f].angular_vel = random_range(-0.045f, 0.045f);
+        /* With force in [25,60] the advection displacement right next to
+         * the source (dt*grid_n*|v|) reaches ~15-19 cells per frame:
+         * several times the diameter of the injection neighborhood, so the
+         * ink "jumps" instead of flowing, looking like falling droplets
+         * instead of a continuous jet. At [6,14] the jump stays around
+         * ~5-6 cells, on the order of the injection neighborhood itself,
+         * and consecutive frames overlap into a continuous stroke. */
+        sources[f].force     = random_range(6.0f, 14.0f);
+        sources[f].flow_rate = random_range(60.0f, 110.0f);
     }
 }
 
 /*
- * Deposita en los buffers "previos" (que actuan como termino fuente) la tinta
- * y la cantidad de movimiento de cada fuente para el frame actual.
+ * Deposits into the "previous" buffers (which act as the source term) the
+ * ink and momentum of each source for the current frame.
  *
- * ELEMENTO TRIGONOMETRICO: la direccion del chorro de cada fuente rota en el
- * tiempo segun (cos(fase), sin(fase)), lo que genera vortices en espiral.
- * La tinta se deposita en un vecindario de celdas con caida gaussiana (en
- * vez de un valor uniforme) para que la mancha nazca ya redondeada: con
- * pocas celdas la forma se percibe como un rombo/pixelado apenas se crea,
- * porque no hay suficientes muestras para leerse como un circulo, y como la
- * difusion de tinta esta en 0 por defecto nada la suaviza despues salvo el
- * movimiento. El peso de cada celda se calcula contra la posicion continua
- * de la fuente (no la celda mas cercana), para que al desplazarse la mancha
- * se deslice de forma continua en vez de saltar de celda en celda.
+ * TRIGONOMETRIC ELEMENT: each source's jet direction rotates over time as
+ * (cos(phase), sin(phase)), which generates spiral vortices. Ink is
+ * deposited over a neighborhood of cells with Gaussian falloff (instead of
+ * a uniform value) so the blob is born already round: with few cells the
+ * shape reads as a diamond/pixelated blob as soon as it's created, because
+ * there aren't enough samples to read as a circle, and since ink diffusion
+ * is 0 by default nothing smooths it afterward except motion. Each cell's
+ * weight is computed against the source's continuous position (not the
+ * nearest cell), so the blob slides continuously as it moves instead of
+ * jumping cell to cell.
  */
-/* Que tan angosto es el nucleo caliente respecto a la mancha de color
- * (fraccion de sigma); mas chico = punto mas concentrado y puntual. */
-#define NUCLEO_SIGMA_FACTOR  0.32f
-/* Cuanto brillo blanco se suma en el centro exacto, como fraccion del
- * caudal de la fuente (asi un chorro mas fuerte tiene un nucleo mas
- * brillante tambien, en vez de un blanco fijo que se notaria distinto
- * segun la fuente). */
-#define NUCLEO_BRILLO_FACTOR 0.9f
+/* How narrow the hot core is relative to the color blob (fraction of
+ * sigma); smaller = a more concentrated, pointlike spot. */
+#define CORE_SIGMA_FACTOR      0.32f
+/* How much white brightness is added at the exact center, as a fraction of
+ * the source's flow rate (so a stronger jet also has a brighter core,
+ * instead of a fixed white that would stand out differently per source). */
+#define CORE_BRIGHTNESS_FACTOR 0.9f
 
-void inyectar_fuentes(FuenteTinta *fuentes, int cantidad, CamposFluido *campos,
-                      float aspecto)
+void inject_sources(InkSource *sources, int count, FluidFields *fields,
+                    float aspect)
 {
-    int f, dx, dy, celda_i, celda_j, centro_x, centro_y;
-    float direccion_x, direccion_y;
-    const int   radio  = fuente_radio(malla_n);
-    const float sigma  = fuente_sigma(malla_n);
-    const float escala = fuente_escala(malla_n);
-    /* render.c usa una escala distinta en x y en y para llenar una ventana
-     * que no es cuadrada (ver comentario en fuentes.h), asi que un sigma
-     * igual en ambos ejes se veria en pantalla como una elipse. Encoger
-     * sigma_x por "aspecto" compensa ese estiramiento para que la mancha
-     * se vea circular. */
-    const float sigma_x = sigma / aspecto;
-    /* El area del vecindario (~sigma^2) crece con la escala; dividir entre
-     * escala^2 mantiene la tinta total depositada por fuente invariante,
-     * sin importar cuantas celdas use el circulo para dibujarse. Encoger
-     * sigma_x reduce esa area en un factor "aspecto", asi que se multiplica
-     * de vuelta para no perder tinta solo por corregir la forma. */
-    const float normalizador = aspecto / (escala * escala);
-    /* Nucleo "caliente": un segundo gaussiano, mucho mas angosto y centrado
-     * en el mismo punto, que se suma por igual a los tres canales de color
-     * (en vez de al color propio de la fuente). Sumar blanco puro empuja el
-     * centro exacto de la fuente hacia blanco/brillante, distinguiendolo del
-     * color de su estela; al alejarse del centro el nucleo se apaga mucho
-     * mas rapido que la mancha de color (por el factor NUCLEO_SIGMA_FACTOR),
-     * as que el efecto es un punto brillante que se funde rapidamente en el
-     * color propio de la fuente. Usa el mismo "normalizador" que la mancha
-     * de color: como ambos sigmas escalan igual con la resolucion de malla,
-     * el mismo factor de correccion por resolucion sigue aplicando. */
-    const float nucleo_sigma_x  = sigma_x * NUCLEO_SIGMA_FACTOR;
-    const float nucleo_sigma    = sigma   * NUCLEO_SIGMA_FACTOR;
+    int f, dx, dy, cell_i, cell_j, center_x, center_y;
+    float direction_x, direction_y;
+    const int   radius = source_radius(grid_n);
+    const float sigma  = source_sigma(grid_n);
+    const float scale  = source_scale(grid_n);
+    /* render.c uses a different scale on x and y to fill a window that
+     * isn't square (see the comment in sources.h), so an equal sigma on
+     * both axes would look like an ellipse on screen. Shrinking sigma_x by
+     * "aspect" compensates for that stretch so the blob looks circular. */
+    const float sigma_x = sigma / aspect;
+    /* The neighborhood's area (~sigma^2) grows with the scale; dividing by
+     * scale^2 keeps the total ink deposited per source invariant,
+     * regardless of how many cells the circle uses to draw itself.
+     * Shrinking sigma_x reduces that area by a factor of "aspect", so it's
+     * multiplied back in to avoid losing ink just from correcting the
+     * shape. */
+    const float normalizer = aspect / (scale * scale);
+    /* "Hot" core: a second Gaussian, much narrower and centered at the same
+     * point, added equally to all three color channels (instead of the
+     * source's own color). Adding pure white pushes the exact center of
+     * the source toward white/bright, distinguishing it from its trail's
+     * color; moving away from the center the core fades out much faster
+     * than the color blob (via the CORE_SIGMA_FACTOR factor), so the
+     * effect is a bright point that quickly blends into the source's own
+     * color. Uses the same "normalizer" as the color blob: since both
+     * sigmas scale the same way with grid resolution, the same
+     * resolution-correction factor still applies. */
+    const float core_sigma_x = sigma_x * CORE_SIGMA_FACTOR;
+    const float core_sigma   = sigma   * CORE_SIGMA_FACTOR;
 
-    /* Los buffers fuente se limpian cada frame */
-    const size_t bytes = (size_t)campos->celdas_total * sizeof(float);
-    memset(campos->vel_x_p,   0, bytes);
-    memset(campos->vel_y_p,   0, bytes);
-    memset(campos->tinta_r_p, 0, bytes);
-    memset(campos->tinta_g_p, 0, bytes);
-    memset(campos->tinta_b_p, 0, bytes);
+    /* The source buffers are cleared every frame */
+    const size_t bytes = (size_t)fields->total_cells * sizeof(float);
+    memset(fields->vel_x_p, 0, bytes);
+    memset(fields->vel_y_p, 0, bytes);
+    memset(fields->ink_r_p, 0, bytes);
+    memset(fields->ink_g_p, 0, bytes);
+    memset(fields->ink_b_p, 0, bytes);
 
-    for (f = 0; f < cantidad; f++) {
-        /* Avance de la fase angular del chorro */
-        fuentes[f].fase += fuentes[f].vel_angular;
-        if (fuentes[f].fase > 2.0f * PI) {
-            fuentes[f].fase -= 2.0f * PI;
+    for (f = 0; f < count; f++) {
+        /* Advance the jet's angular phase */
+        sources[f].phase += sources[f].angular_vel;
+        if (sources[f].phase > 2.0f * PI) {
+            sources[f].phase -= 2.0f * PI;
         }
 
-        direccion_x = cosf(fuentes[f].fase) * fuentes[f].fuerza;
-        direccion_y = sinf(fuentes[f].fase) * fuentes[f].fuerza;
+        direction_x = cosf(sources[f].phase) * sources[f].force;
+        direction_y = sinf(sources[f].phase) * sources[f].force;
 
-        /* La posicion es continua (la mueve el sistema de n-cuerpos); solo
-         * se usa floor() para ubicar la celda base del vecindario a
-         * recorrer, el peso de cada celda usa la posicion continua real. */
-        centro_x = (int)floorf(fuentes[f].pos_x);
-        centro_y = (int)floorf(fuentes[f].pos_y);
+        /* The position is continuous (moved by the n-body system); only
+         * floor() is used to locate the neighborhood's base cell, each
+         * cell's weight uses the real continuous position. */
+        center_x = (int)floorf(sources[f].pos_x);
+        center_y = (int)floorf(sources[f].pos_y);
 
-        for (dy = -radio; dy <= radio; dy++) {
-            for (dx = -radio; dx <= radio; dx++) {
-                celda_i = centro_x + dx;
-                celda_j = centro_y + dy;
+        for (dy = -radius; dy <= radius; dy++) {
+            for (dx = -radius; dx <= radius; dx++) {
+                cell_i = center_x + dx;
+                cell_j = center_y + dy;
 
-                /* Solo se escribe dentro de las celdas interiores */
-                if (celda_i < 1 || celda_i > malla_n ||
-                    celda_j < 1 || celda_j > malla_n) {
+                /* Only write within the interior cells */
+                if (cell_i < 1 || cell_i > grid_n ||
+                    cell_j < 1 || cell_j > grid_n) {
                     continue;
                 }
 
-                /* Nucleo gaussiano contra la posicion continua real de la
-                 * fuente (no contra el centro entero del vecindario), para
-                 * que la mancha se deslice suavemente entre celdas. */
-                float dif_x = (float)celda_i - fuentes[f].pos_x;
-                float dif_y = (float)celda_j - fuentes[f].pos_y;
-                float dist2 = (dif_x * dif_x) / (sigma_x * sigma_x) +
-                              (dif_y * dif_y) / (sigma  * sigma);
-                float peso  = expf(-dist2 / 2.0f) * normalizador;
+                /* Gaussian kernel against the source's real continuous
+                 * position (not the neighborhood's integer center), so the
+                 * blob slides smoothly between cells. */
+                float diff_x = (float)cell_i - sources[f].pos_x;
+                float diff_y = (float)cell_j - sources[f].pos_y;
+                float dist2 = (diff_x * diff_x) / (sigma_x * sigma_x) +
+                              (diff_y * diff_y) / (sigma   * sigma);
+                float weight = expf(-dist2 / 2.0f) * normalizer;
 
-                /* Mismo calculo que "peso" pero con el sigma angosto del
-                 * nucleo caliente, asi que cae a cero mucho mas rapido con
-                 * la distancia y solo aporta brillo justo en el centro. */
-                float dist2_nucleo = (dif_x * dif_x) / (nucleo_sigma_x * nucleo_sigma_x) +
-                                     (dif_y * dif_y) / (nucleo_sigma   * nucleo_sigma);
-                float peso_nucleo  = expf(-dist2_nucleo / 2.0f) * normalizador;
-                float brillo       = NUCLEO_BRILLO_FACTOR * fuentes[f].caudal *
-                                      peso_nucleo;
+                /* Same calculation as "weight" but with the hot core's
+                 * narrow sigma, so it falls to zero much faster with
+                 * distance and only contributes brightness right at the
+                 * center. */
+                float dist2_core = (diff_x * diff_x) / (core_sigma_x * core_sigma_x) +
+                                   (diff_y * diff_y) / (core_sigma   * core_sigma);
+                float weight_core  = expf(-dist2_core / 2.0f) * normalizer;
+                float brightness   = CORE_BRIGHTNESS_FACTOR * sources[f].flow_rate *
+                                      weight_core;
 
-                campos->vel_x_p[IX(celda_i, celda_j)] += direccion_x * peso;
-                campos->vel_y_p[IX(celda_i, celda_j)] += direccion_y * peso;
+                fields->vel_x_p[IX(cell_i, cell_j)] += direction_x * weight;
+                fields->vel_y_p[IX(cell_i, cell_j)] += direction_y * weight;
 
-                campos->tinta_r_p[IX(celda_i, celda_j)] +=
-                    fuentes[f].caudal * fuentes[f].color_r * peso + brillo;
-                campos->tinta_g_p[IX(celda_i, celda_j)] +=
-                    fuentes[f].caudal * fuentes[f].color_g * peso + brillo;
-                campos->tinta_b_p[IX(celda_i, celda_j)] +=
-                    fuentes[f].caudal * fuentes[f].color_b * peso + brillo;
+                fields->ink_r_p[IX(cell_i, cell_j)] +=
+                    sources[f].flow_rate * sources[f].color_r * weight + brightness;
+                fields->ink_g_p[IX(cell_i, cell_j)] +=
+                    sources[f].flow_rate * sources[f].color_g * weight + brightness;
+                fields->ink_b_p[IX(cell_i, cell_j)] +=
+                    sources[f].flow_rate * sources[f].color_b * weight + brightness;
             }
         }
     }
 }
 
 /*
- * Multiplica la tinta por un factor menor que 1 para que se desvanezca poco a
- * poco; sin esto la pantalla terminaria saturada de blanco.
+ * Multiplies the ink by a factor below 1 so it fades out gradually; without
+ * this the screen would end up saturated white.
  */
-void disipar_tinta(CamposFluido *campos)
+void dissipate_ink(FluidFields *fields)
 {
     int i;
-    for (i = 0; i < campos->celdas_total; i++) {
-        campos->tinta_r[i] *= DISIPACION;
-        campos->tinta_g[i] *= DISIPACION;
-        campos->tinta_b[i] *= DISIPACION;
+    for (i = 0; i < fields->total_cells; i++) {
+        fields->ink_r[i] *= DISSIPATION;
+        fields->ink_g[i] *= DISSIPATION;
+        fields->ink_b[i] *= DISSIPATION;
     }
 }

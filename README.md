@@ -1,24 +1,26 @@
-# Screensaver de Fluidos — Navier-Stokes (versión secuencial)
+# Fluid Screensaver — Navier-Stokes (sequential version)
 
-Proyecto #1 — Computación Paralela y Distribuida, UVG.
+Project #1 — Parallel and Distributed Computing, UVG.
 
-Screensaver que simula un fluido incompresible en 2D resolviendo las ecuaciones
-de Navier-Stokes con el método **Stable Fluids** de Jos Stam (1999). Varias
-fuentes de tinta de colores pseudoaleatorios inyectan color y cantidad de
-movimiento; el fluido las transporta generando remolinos.
+A screensaver that simulates an incompressible 2D fluid by solving the
+Navier-Stokes equations with Jos Stam's **Stable Fluids** method (1999).
+Several pseudo-random colored ink sources inject color and momentum; the
+fluid carries them around, generating swirls. The sources themselves move
+under a mutual-gravity n-body system.
 
-Esta es la **versión secuencial**, que sirve como base de comparación para medir
-speedup y eficiencia de la versión paralela con OpenMP.
+This is the **sequential version**, which serves as the comparison baseline
+for measuring speedup and efficiency of the OpenMP parallel version (see
+`docs/OPTIMIZATIONS.md` for the parallelization plan and benchmark results).
 
 ---
 
-## Requisitos
+## Requirements
 
-- Compilador C con soporte C11 (`gcc` o `clang`)
-- SDL2 (biblioteca de desarrollo)
+- A C compiler with C11 support (`gcc` or `clang`)
+- SDL2 (development library)
 - `make`, `pkg-config`
 
-### Instalación de SDL2
+### Installing SDL2
 
 **Ubuntu / Debian / WSL**
 ```bash
@@ -36,137 +38,120 @@ sudo dnf install gcc make pkgconf-pkg-config SDL2-devel
 brew install sdl2 pkg-config
 ```
 
-**Windows** — se recomienda usar WSL2 con Ubuntu y seguir las instrucciones de
-Debian. Si se usa MSYS2: `pacman -S mingw-w64-x86_64-SDL2 mingw-w64-x86_64-gcc`.
+**Windows** — using WSL2 with Ubuntu and following the Debian instructions is
+recommended. With MSYS2: `pacman -S mingw-w64-x86_64-SDL2 mingw-w64-x86_64-gcc`.
 
-Verificar la instalación:
+Verify the install:
 ```bash
 pkg-config --modversion sdl2
 ```
 
 ---
 
-## Compilación
+## Building
 
 ```bash
 make
 ```
 
-Genera el ejecutable `Screensaver`. Para limpiar: `make clean`.
+Produces the `Screensaver` executable. To clean: `make clean`.
 
 ---
 
-## Uso
+## Usage
 
 ```bash
-./Screensaver [opciones]
+./Screensaver [options]
 ```
 
-| Opción | Descripción | Rango | Defecto |
+| Option | Description | Range | Default |
 |--------|-------------|-------|---------|
-| `-n <N>` | Resolución de la malla (N × N celdas) | 16–1024 | 128 |
-| `-f <F>` | Cantidad de fuentes de tinta | 1–256 | 6 |
-| `-W <ancho>` | Ancho de la ventana en píxeles | ≥ 640 | 800 |
-| `-H <alto>` | Alto de la ventana en píxeles | ≥ 480 | 600 |
-| `-s <semilla>` | Semilla pseudoaleatoria (para reproducibilidad) | ≥ 0 | reloj |
-| `-t <dt>` | Paso de tiempo de la simulación | 0.001–1.0 | 0.10 |
-| `-v <visc>` | Viscosidad cinemática del fluido | 0–1 | 0.0 |
-| `-d <diff>` | Coeficiente de difusión de la tinta | 0–1 | 0.0 |
-| `-b` | Activa el sistema de n-cuerpos (las fuentes se mueven por gravedad) | — | desactivado |
-| `-h` | Muestra la ayuda | — | — |
+| `-n <N>` | Grid resolution (N × N cells) | 16–1024 | 256 |
+| `-f <F>` | Number of ink sources | 1–256 | 6 |
+| `-W <width>` | Window width in pixels | ≥ 640 | 1920 |
+| `-H <height>` | Window height in pixels | ≥ 480 | 1080 |
+| `-s <seed>` | Pseudo-random seed (for reproducibility) | ≥ 0 | system clock |
+| `-t <dt>` | Simulation time step | 0.001–1.0 | 0.07 |
+| `-v <visc>` | Kinematic viscosity of the fluid | 0–1 | 0.0 |
+| `-d <diff>` | Ink diffusion coefficient | 0–1 | 0.0001 |
+| `-b` | Toggles the n-body system (sources move under mutual gravity) | — | on |
+| `-p`, `-F` | Fullscreen (exact size of the current screen) | — | off |
+| `-h` | Shows help | — | — |
 
-### Ejemplos
+### Examples
 
 ```bash
-./Screensaver                          # configuración por defecto
-./Screensaver -n 192 -f 12             # más resolución y más fuentes
-./Screensaver -n 256 -f 8 -s 42        # reproducible con semilla fija
-./Screensaver -n 128 -v 0.0001 -d 0.00001   # fluido más viscoso y difuso
-./Screensaver -b -f 10                 # fuentes en movimiento (n-cuerpos)
+./Screensaver                          # default configuration
+./Screensaver -n 192 -f 12             # more resolution and more sources
+./Screensaver -n 256 -f 8 -s 42        # reproducible with a fixed seed
+./Screensaver -n 128 -v 0.0001 -d 0.00001   # more viscous, more diffuse fluid
+./Screensaver -b -f 10                 # disable n-body motion, 10 sources
+./Screensaver -p                       # fullscreen at the current resolution
 ```
 
-### Controles
+### Controls
 
-| Tecla | Acción |
-|-------|--------|
-| `ESC` / `Q` | Salir |
-| `R` | Reiniciar la simulación con fuentes nuevas |
+| Key | Action |
+|-----|--------|
+| `ESC` / `Q` | Quit |
+| `R` | Reset the simulation with new sources |
 
-Los FPS se muestran en el título de la ventana y se imprimen en consola cada
-0.5 s.
-
----
-
-## Estructura del algoritmo
-
-Cada frame ejecuta un paso de tiempo compuesto por cuatro operadores:
-
-1. **`agregar_fuente`** — aplica fuerzas externas y la inyección de tinta.
-2. **`difundir`** — difusión viscosa implícita (sistema lineal disperso).
-3. **`advectar`** — transporte semi-Lagrangiano con interpolación bilineal.
-4. **`proyectar`** — proyección de Hodge que impone `div(u) = 0`
-   (incompresibilidad); requiere resolver una ecuación de Poisson.
-
-Los pasos 2 y 4 resuelven sistemas lineales con **relajación de Gauss-Seidel**
-(`resolver_lineal`, 20 iteraciones).
-
-La tinta se lleva en **tres campos independientes (R, G, B)** para poder mezclar
-colores en pantalla, lo que triplica el costo del paso de densidad.
-
-**Elemento trigonométrico:** la dirección del chorro de cada fuente rota en el
-tiempo según `(cos(fase), sin(fase))` con velocidad angular propia, generando
-vórtices en espiral. Además, las condiciones de frontera reflejan la componente
-normal de la velocidad, haciendo que el fluido rebote en los muros.
+FPS are shown in the window title and printed to the console every 0.5 s.
 
 ---
 
-## Nota para la fase paralela
+## Algorithm structure
 
-`resolver_lineal` usa Gauss-Seidel, que lee valores **ya actualizados en la misma
-iteración**. Esto crea una dependencia de datos entre celdas vecinas y hace que
-el ciclo **no sea directamente paralelizable** con `#pragma omp parallel for`
-(produciría condiciones de carrera y resultados no deterministas).
+Each frame runs one time step made up of four operators:
 
-Opciones para la versión OpenMP:
+1. **`add_source`** — applies external forces and ink injection.
+2. **`diffuse`** — implicit viscous diffusion (sparse linear system).
+3. **`advect`** — semi-Lagrangian transport with bilinear interpolation.
+4. **`project`** — Hodge projection enforcing `div(u) = 0`
+   (incompressibility); requires solving a Poisson equation.
 
-- **Jacobi** — leer de un buffer separado elimina las dependencias por completo;
-  es trivialmente paralelizable pero converge más lento por iteración (puede
-  requerir aumentar `ITER_GAUSS_SEIDEL`).
-- **Red-black Gauss-Seidel** — dividir la malla en celdas "rojas" y "negras"
-  como un tablero de ajedrez; cada mitad se actualiza en paralelo sin
-  dependencias internas, conservando la velocidad de convergencia de
-  Gauss-Seidel.
+Steps 2 and 4 solve linear systems with **Gauss-Seidel relaxation**
+(`solve_linear`, `GAUSS_SEIDEL_ITERS` = 20 iterations).
 
-Los operadores `advectar`, `agregar_fuente`, `disipar_tinta` y los ciclos de
-`proyectar` (fuera del solver) **sí** son directamente paralelizables, ya que
-cada celda escribe únicamente en su propia posición.
+Ink is carried in **three independent fields (R, G, B)** so colors can mix
+on screen, which triples the cost of the density step.
 
----
-
-## Mediciones de referencia (versión secuencial)
-
-Medido con `-f 8 -s 7`, promedio de las últimas 3 lecturas de FPS:
-
-| N (malla) | Celdas | FPS medio |
-|-----------|--------|-----------|
-| 64 | 4 096 | 154.2 |
-| 128 | 16 384 | 51.0 |
-| 192 | 36 864 | 23.9 |
-| 256 | 65 536 | 13.7 |
-
-> Estos valores dependen del hardware; cada equipo debe repetir las mediciones
-> en su propia máquina para la bitácora de pruebas.
-
-**Observación relevante para el informe:** a partir de N ≈ 192 la versión
-secuencial cae por debajo del umbral de 30 FPS exigido por el enunciado. Esto
-justifica directamente la necesidad de la versión paralela y da un punto de
-comparación muy claro para la sección de speedup.
+**Trigonometric element:** each source's jet direction rotates over time as
+`(cos(phase), sin(phase))` with its own angular velocity, generating spiral
+vortices. Boundary conditions also reflect the normal velocity component,
+making the fluid bounce off the walls.
 
 ---
 
-## Verificación realizada
+## Note on the parallel phase
 
-- Compila sin warnings con `-Wall -Wextra -O2 -std=c11`.
-- Validación de argumentos probada con entradas no numéricas, fuera de rango,
-  faltantes y opciones desconocidas.
-- `valgrind --leak-check=full`: 0 bytes perdidos, 0 errores.
+`solve_linear` uses Gauss-Seidel, which reads values **already updated
+within the same iteration**. This creates a data dependency between
+neighboring cells and makes the loop **not directly parallelizable** with
+`#pragma omp parallel for` (it would produce race conditions and
+non-deterministic results).
+
+Options for the OpenMP version:
+
+- **Jacobi** — reading from a separate buffer removes the dependencies
+  entirely; trivially parallelizable but converges slower per iteration
+  (may require raising `GAUSS_SEIDEL_ITERS`).
+- **Red-black Gauss-Seidel** — split the grid into "red" and "black" cells
+  like a checkerboard; each half updates in parallel with no internal
+  dependencies, keeping Gauss-Seidel's convergence speed.
+
+The `advect`, `add_source`, `dissipate_ink` operators and the loops inside
+`project` (outside the solver) **are** directly parallelizable, since each
+cell only writes to its own position.
+
+See `docs/OPTIMIZATIONS.md` for the actual step-by-step parallelization plan
+and benchmark results as they're filled in.
+
+---
+
+## Verification performed
+
+- Compiles without warnings under `-Wall -Wextra -O2 -std=c11`.
+- Argument validation tested with non-numeric input, out-of-range values,
+  missing values, and unknown options.
+- `valgrind --leak-check=full`: 0 bytes lost, 0 errors.
