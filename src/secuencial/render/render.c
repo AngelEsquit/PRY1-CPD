@@ -2,8 +2,13 @@
 #include "comun.h"
 #include "utilidades.h"
 
+#include <math.h>
 #include <stddef.h>
 #include <stdio.h>
+
+/* Exponente de la curva gamma del alfa (ver renderizar_tinta): mientras mas
+ * chico, mas rapido llega el alfa a opaco con poco brillo de tinta. */
+#define ALFA_GAMMA 0.35f
 
 /*
  * Interpola bilinealmente "campo" (malla N x N con anillo fantasma) en la
@@ -58,11 +63,16 @@ void renderizar_tinta(SDL_Texture *textura, const CamposFluido *campos,
 
     pixeles = (Uint32 *)pixeles_crudos;
 
+    /* Cada pixel se calcula de forma independiente (solo lee los campos de
+     * tinta, no los modifica). Nota: fy depende solo de j y no de i, asi que
+     * con collapse(2) se recalcula por cada (i,j) en vez de una vez por
+     * fila; es un recalculo barato (una resta y una multiplicacion) y a
+     * cambio incluso mallas muy angostas reparten trabajo entre todos los
+     * hilos. */
     for (j = 0; j < alto_textura; j++) {
-        Uint32 *fila = pixeles + (size_t)j * ((size_t)pitch_bytes / sizeof(Uint32));
-        fy = ((float)j + 0.5f) * escala_y - 0.5f;
-
         for (i = 0; i < ancho_textura; i++) {
+            Uint32 *fila = pixeles + (size_t)j * ((size_t)pitch_bytes / sizeof(Uint32));
+            fy = ((float)j + 0.5f) * escala_y - 0.5f;
             fx = ((float)i + 0.5f) * escala_x - 0.5f;
 
             /* Se aplica un mapeo tipo Reinhard (x / (x + k)) en lugar de un
@@ -84,10 +94,37 @@ void renderizar_tinta(SDL_Texture *textura, const CamposFluido *campos,
             valor_g = acotar(promedio + (valor_g - promedio) * SATURACION_FACTOR, 0.0f, 1.0f);
             valor_b = acotar(promedio + (valor_b - promedio) * SATURACION_FACTOR, 0.0f, 1.0f);
 
-            fila[i] = ((Uint32)0xFF << 24) |
-                      ((Uint32)(valor_r * 255.0f) << 16) |
-                      ((Uint32)(valor_g * 255.0f) <<  8) |
-                      ((Uint32)(valor_b * 255.0f));
+            /* Alfa proporcional al brillo de la tinta (en vez de 0xFF fijo):
+             * donde no hay tinta el pixel es transparente y deja ver el
+             * fondo (estrellas/vinieta) dibujado antes en el renderer; donde
+             * la tinta satura, el pixel es opaco y la tapa por completo. El
+             * canal mas alto de los tres se usa como aproximacion de
+             * brillo (evita que un color muy saturado en un solo canal, con
+             * promedio bajo, se vea mas transparente de lo que deberia). */
+            {
+                float brillo_max, alfa;
+
+                brillo_max = valor_r;
+                if (valor_g > brillo_max) brillo_max = valor_g;
+                if (valor_b > brillo_max) brillo_max = valor_b;
+
+                /* Usar brillo_max directo como alfa deja gran parte de la
+                 * mancha (todo lo que no este ya saturado a full brillo)
+                 * semi-transparente, y SDL_BLENDMODE_BLEND la mezcla con el
+                 * fondo oscuro de mas atras: el resultado se ve deslavado,
+                 * como si el color de la tinta perdiera intensidad. Una
+                 * curva gamma (<1) empuja el alfa a opaco mucho mas rapido
+                 * que el brillo real, asi que la mancha se ve tan vivida
+                 * como antes de agregar el fondo, y solo el borde donde la
+                 * tinta cae casi a cero se queda transparente (para que ahi
+                 * se vean las estrellas). */
+                alfa = powf(brillo_max, ALFA_GAMMA);
+
+                fila[i] = ((Uint32)(alfa * 255.0f) << 24) |
+                          ((Uint32)(valor_r * 255.0f) << 16) |
+                          ((Uint32)(valor_g * 255.0f) <<  8) |
+                          ((Uint32)(valor_b * 255.0f));
+            }
         }
     }
 

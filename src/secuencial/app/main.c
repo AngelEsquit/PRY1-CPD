@@ -39,7 +39,7 @@
  *   main.c               - programa principal (este archivo)
  *
  * Compilacion:  make            (ver Makefile)
- * Uso:          ./Screensaver_seq -n 128 -f 6
+ * Uso:          ./screensaver_seq -n 128 -f 6
  * ===========================================================================
  */
 
@@ -54,6 +54,7 @@
 #include "ncuerpos.h"
 #include "solver.h"
 #include "render.h"
+#include "fondo.h"
 
 /* Resolucion de la malla; global para que la macro IX() sea legible.
  * Unica definicion del proyecto (declarada extern en comun.h para que el
@@ -65,6 +66,7 @@ int main(int argc, char *argv[])
     Configuracion  config;
     CamposFluido   campos;
     FuenteTinta   *fuentes = NULL;
+    Estrella      *estrellas = NULL;
     SDL_Window    *ventana = NULL;
     SDL_Renderer  *renderizador = NULL;
     SDL_Texture   *textura = NULL;
@@ -86,35 +88,19 @@ int main(int argc, char *argv[])
     malla_n = config.malla_n;   /* fija la resolucion usada por la macro IX() */
     srand(config.semilla);
 
-    /* --- 2. Inicializacion de SDL y deteccion de pantalla ---------------- */
-    if (SDL_Init(SDL_INIT_VIDEO) != 0) {
-        fprintf(stderr, "Error: no se pudo inicializar SDL: %s\n", SDL_GetError());
-        return EXIT_FAILURE;
-    }
-
-    if (config.pantalla_completa) {
-        SDL_DisplayMode dm;
-        if (SDL_GetCurrentDisplayMode(0, &dm) == 0 || SDL_GetDesktopDisplayMode(0, &dm) == 0) {
-            config.ventana_ancho = dm.w;
-            config.ventana_alto  = dm.h;
-        }
-    }
-
     printf("Simulacion de fluidos (Navier-Stokes) - version SECUENCIAL\n");
     printf("  Malla        : %d x %d celdas (%d celdas interiores)\n",
            config.malla_n, config.malla_n, config.malla_n * config.malla_n);
     printf("  Fuentes      : %d\n", config.num_fuentes);
-    printf("  Ventana      : %d x %d px%s\n",
-           config.ventana_ancho, config.ventana_alto,
-           config.pantalla_completa ? " (pantalla completa)" : "");
+    printf("  Ventana      : %d x %d px\n",
+           config.ventana_ancho, config.ventana_alto);
     printf("  Semilla      : %u\n", config.semilla);
     printf("  dt / visc / diff : %.3f / %.5f / %.5f\n",
            (double)config.dt, (double)config.viscosidad, (double)config.difusion);
     printf("  Sistema n-cuerpos: %s\n\n", config.nbody ? "activado" : "desactivado");
 
-    /* --- 3. Memoria de los campos ---------------------------------------- */
+    /* --- 2. Memoria de los campos ---------------------------------------- */
     if (!reservar_campos(&campos, config.malla_n)) {
-        SDL_Quit();
         return EXIT_FAILURE;
     }
 
@@ -123,33 +109,40 @@ int main(int argc, char *argv[])
     if (fuentes == NULL) {
         fprintf(stderr, "Error: no se pudo reservar memoria para las fuentes.\n");
         liberar_campos(&campos);
-        SDL_Quit();
         return EXIT_FAILURE;
     }
     inicializar_fuentes(fuentes, config.num_fuentes, config.malla_n);
 
-    /* --- 4. Creacion de ventana y renderizador --------------------------- */
+    estrellas = (Estrella *)malloc((size_t)FONDO_ESTRELLAS_CANTIDAD *
+                                   sizeof(Estrella));
+    if (estrellas == NULL) {
+        fprintf(stderr, "Error: no se pudo reservar memoria para el fondo.\n");
+        free(fuentes);
+        liberar_campos(&campos);
+        return EXIT_FAILURE;
+    }
+    inicializar_fondo(estrellas, FONDO_ESTRELLAS_CANTIDAD,
+                      config.ventana_ancho, config.ventana_alto);
+
+    /* --- 3. Inicializacion de SDL ---------------------------------------- */
+    if (SDL_Init(SDL_INIT_VIDEO) != 0) {
+        fprintf(stderr, "Error: no se pudo inicializar SDL: %s\n", SDL_GetError());
+        codigo_salida = EXIT_FAILURE;
+        goto limpieza;
+    }
+
     /* Filtrado lineal para que la malla escalada no se vea pixelada */
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");
-
-    Uint32 flags_ventana = SDL_WINDOW_SHOWN;
-    if (config.pantalla_completa) {
-        flags_ventana |= SDL_WINDOW_FULLSCREEN_DESKTOP;
-        SDL_ShowCursor(SDL_DISABLE);
-    }
 
     ventana = SDL_CreateWindow("Screensaver de fluidos - secuencial",
                                SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                                config.ventana_ancho, config.ventana_alto,
-                               flags_ventana);
+                               SDL_WINDOW_SHOWN);
     if (ventana == NULL) {
         fprintf(stderr, "Error: no se pudo crear la ventana: %s\n", SDL_GetError());
         codigo_salida = EXIT_FAILURE;
         goto limpieza;
     }
-
-    /* Obtiene el tamano real asignado por SDL */
-    SDL_GetWindowSize(ventana, &config.ventana_ancho, &config.ventana_alto);
 
     renderizador = SDL_CreateRenderer(ventana, -1, SDL_RENDERER_ACCELERATED);
     if (renderizador == NULL) {
@@ -173,6 +166,10 @@ int main(int argc, char *argv[])
         codigo_salida = EXIT_FAILURE;
         goto limpieza;
     }
+    /* La textura de tinta ahora lleva alfa proporcional al brillo (ver
+     * render.c); sin esto SDL_RenderCopy la trataria como opaca y taparia
+     * el fondo (estrellas) por completo sin importar el alfa del pixel. */
+    SDL_SetTextureBlendMode(textura, SDL_BLENDMODE_BLEND);
 
     /* --- 4. Ciclo principal ---------------------------------------------- */
     frecuencia_reloj     = SDL_GetPerformanceFrequency();
@@ -200,7 +197,8 @@ int main(int argc, char *argv[])
         if (config.nbody) {
             actualizar_fuentes_nbody(fuentes, config.num_fuentes, config.malla_n);
         }
-        inyectar_fuentes(fuentes, config.num_fuentes, &campos);
+        inyectar_fuentes(fuentes, config.num_fuentes, &campos,
+                         (float)config.ventana_ancho / (float)config.ventana_alto);
 
         paso_velocidad(&campos, config.viscosidad, config.dt);
 
@@ -216,9 +214,18 @@ int main(int argc, char *argv[])
 
         disipar_tinta(&campos);
 
-        /* 4.3 Dibujo */
+        actualizar_fondo(estrellas, FONDO_ESTRELLAS_CANTIDAD);
+
+        /* 4.3 Dibujo: primero el fondo (color base + estrellas) directo con
+         * el renderer, y despues la tinta encima; como la textura de tinta
+         * ahora es semi-transparente donde no hay tinta (ver render.c), el
+         * fondo se ve a traves de esas zonas en vez de quedar tapado. */
         renderizar_tinta(textura, &campos, config.ventana_ancho, config.ventana_alto);
+
+        SDL_SetRenderDrawColor(renderizador, FONDO_COLOR_R, FONDO_COLOR_G,
+                               FONDO_COLOR_B, 255);
         SDL_RenderClear(renderizador);
+        dibujar_fondo(renderizador, estrellas, FONDO_ESTRELLAS_CANTIDAD);
         SDL_RenderCopy(renderizador, textura, NULL, NULL);
         SDL_RenderPresent(renderizador);
 
@@ -255,6 +262,7 @@ limpieza:
     SDL_Quit();
 
     free(fuentes);
+    free(estrellas);
     liberar_campos(&campos);
 
     return codigo_salida;

@@ -15,7 +15,6 @@ typedef struct {
     int          num_fuentes;    /* cantidad de fuentes de tinta              */
     int          ventana_ancho;
     int          ventana_alto;
-    int          pantalla_completa; /* 1 = tamano exacto de la pantalla actual */
     unsigned int semilla;        /* semilla del generador pseudoaleatorio     */
     float        dt;
     float        viscosidad;

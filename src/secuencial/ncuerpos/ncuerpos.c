@@ -1,5 +1,6 @@
 #include "ncuerpos.h"
 #include "comun.h"
+#include "fuentes.h"
 #include "utilidades.h"
 
 #include <math.h>
@@ -38,11 +39,12 @@ void actualizar_fuentes_nbody(FuenteTinta *fuentes, int cantidad, int resolucion
     float acel_x[FUENTES_MAX] = { 0 };
     float acel_y[FUENTES_MAX] = { 0 };
     int   i, j;
+    const int radio = fuente_radio(resolucion);
     /* Las fuentes no pueden salir del vecindario de inyeccion (ver
-     * FUENTE_RADIO, definido en fuentes.h) sin perder celdas interiores
+     * fuente_radio(), definido en fuentes.h) sin perder celdas interiores
      * validas. */
-    const float limite_inf = (float)(FUENTE_RADIO + 1);
-    const float limite_sup = (float)(resolucion - FUENTE_RADIO);
+    const float limite_inf = (float)(radio + 1);
+    const float limite_sup = (float)(resolucion - radio);
 
     for (i = 0; i < cantidad; i++) {
         for (j = i + 1; j < cantidad; j++) {

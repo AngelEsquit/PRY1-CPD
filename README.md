@@ -52,14 +52,14 @@ pkg-config --modversion sdl2
 make
 ```
 
-Genera el ejecutable `Screensaver_seq`. Para limpiar: `make clean`.
+Genera el ejecutable `screensaver_seq`. Para limpiar: `make clean`.
 
 ---
 
 ## Uso
 
 ```bash
-./Screensaver_seq [opciones]
+./screensaver_seq [opciones]
 ```
 
 | Opción | Descripción | Rango | Defecto |
@@ -73,18 +73,16 @@ Genera el ejecutable `Screensaver_seq`. Para limpiar: `make clean`.
 | `-v <visc>` | Viscosidad cinemática del fluido | 0–1 | 0.0 |
 | `-d <diff>` | Coeficiente de difusión de la tinta | 0–1 | 0.0 |
 | `-b` | Activa el sistema de n-cuerpos (las fuentes se mueven por gravedad) | — | desactivado |
-| `-p`, `-F` | Pantalla completa (tamaño exacto de la pantalla actual) | — | desactivado |
 | `-h` | Muestra la ayuda | — | — |
 
 ### Ejemplos
 
 ```bash
-./Screensaver_seq                          # configuración por defecto
-./Screensaver_seq -p                       # pantalla completa (resolución actual)
-./Screensaver_seq -n 192 -f 12             # más resolución y más fuentes
-./Screensaver_seq -n 256 -f 8 -s 42        # reproducible con semilla fija
-./Screensaver_seq -n 128 -v 0.0001 -d 0.00001   # fluido más viscoso y difuso
-./Screensaver_seq -b -f 10                 # fuentes en movimiento (n-cuerpos)
+./screensaver_seq                          # configuración por defecto
+./screensaver_seq -n 192 -f 12             # más resolución y más fuentes
+./screensaver_seq -n 256 -f 8 -s 42        # reproducible con semilla fija
+./screensaver_seq -n 128 -v 0.0001 -d 0.00001   # fluido más viscoso y difuso
+./screensaver_seq -b -f 10                 # fuentes en movimiento (n-cuerpos)
 ```
 
 ### Controles

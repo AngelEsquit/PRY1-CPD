@@ -49,33 +49,70 @@ static void agregar_fuente(float *destino, const float *fuente, float dt,
 }
 
 /*
+ * Actualiza un solo color del tablero de ajedrez (paridad = (i+j) % 2) desde
+ * dentro de una region paralela ya abierta (ver resolver_lineal). Los 4
+ * vecinos de una celda de un color son siempre del color opuesto, asi que
+ * dentro de un mismo color no hay dependencias entre celdas: cada una lee
+ * unicamente vecinos que fueron escritos en el semi-paso anterior (el color
+ * contrario), nunca uno que otro hilo este escribiendo ahora mismo. Eso hace
+ * que el barrido de un color sea trivialmente paralelizable.
+ */
+static void relajar_color(float *campo, const float *campo_previo,
+                          float a, float inverso_c, int paridad)
+{
+    int i, j;
+
+    for (j = 1; j <= malla_n; j++) {
+        /* Menor i >= 1 tal que (i + j) % 2 == paridad */
+        int inicio = (((1 + j) % 2) == paridad) ? 1 : 2;
+
+        for (i = inicio; i <= malla_n; i += 2) {
+            campo[IX(i, j)] = (campo_previo[IX(i, j)] +
+                               a * (campo[IX(i - 1, j)] + campo[IX(i + 1, j)] +
+                                    campo[IX(i, j - 1)] + campo[IX(i, j + 1)]))
+                              * inverso_c;
+        }
+    }
+}
+
+/*
  * Resuelve el sistema lineal disperso   x = (x0 + a * suma_vecinos) / c
- * mediante relajacion de Gauss-Seidel.
+ * mediante relajacion de Gauss-Seidel con recorrido red-black: cada
+ * iteracion se parte en dos semi-pasos (celdas "rojas" primero, luego las
+ * "negras"), cada uno repartido entre hilos por relajar_color(). Esto
+ * converge practicamente igual que el Gauss-Seidel secuencial de fila en
+ * fila (de hecho, al usar siempre los vecinos mas recientes disponibles,
+ * suele converger un poco mas rapido), pero sin la dependencia de datos que
+ * impedia paralelizarlo.
  *
- * NOTA IMPORTANTE PARA LA VERSION PARALELA:
- * Gauss-Seidel usa los valores ya actualizados de la misma iteracion, lo que
- * crea una dependencia de datos entre celdas vecinas y hace que este ciclo NO
- * sea directamente paralelizable. En la version con OpenMP se sustituye por
- * Jacobi (que lee de un buffer separado y por tanto no tiene dependencias) o
- * por un recorrido red-black. Aqui se conserva Gauss-Seidel por ser el metodo
- * secuencial de referencia y el que converge mas rapido por iteracion.
+ * Todas las iteraciones comparten una unica region "omp parallel": abrir y
+ * cerrar un equipo de hilos tiene un costo fijo notable, y aqui se llama a
+ * relajar_color() dos veces por iteracion (2 * ITER_GAUSS_SEIDEL veces por
+ * llamada, y esta funcion se llama varias veces por frame), asi que pagar
+ * ese costo una sola vez en vez de en cada semi-paso importa mucho en
+ * mallas chicas. Los "omp for" internos ya traen una barrera implicita al
+ * final, asi que el orden rojo -> negro -> frontera se respeta sin
+ * sincronizacion manual; "omp single" hace que solo un hilo aplique la
+ * frontera mientras los demas esperan en su barrera implicita.
  */
 static void resolver_lineal(int tipo_borde, float *campo, const float *campo_previo,
                             float a, float c)
 {
-    int iteracion, i, j;
+    int iteracion;
     const float inverso_c = 1.0f / c;
 
-    for (iteracion = 0; iteracion < ITER_GAUSS_SEIDEL; iteracion++) {
-        for (j = 1; j <= malla_n; j++) {
-            for (i = 1; i <= malla_n; i++) {
-                campo[IX(i, j)] = (campo_previo[IX(i, j)] +
-                                   a * (campo[IX(i - 1, j)] + campo[IX(i + 1, j)] +
-                                        campo[IX(i, j - 1)] + campo[IX(i, j + 1)]))
-                                  * inverso_c;
-            }
+    /* El for de "iteracion" no es un omp for: cada hilo lo ejecuta de forma
+     * redundante (es control de flujo barato) para llegar en lockstep a
+     * cada relajar_color(), que si reparte trabajo real. private(iteracion)
+     * evita que varios hilos escriban la misma variable compartida sin
+     * sincronizacion. */
+    {
+        for (iteracion = 0; iteracion < ITER_GAUSS_SEIDEL; iteracion++) {
+            relajar_color(campo, campo_previo, a, inverso_c, 0);
+            relajar_color(campo, campo_previo, a, inverso_c, 1);
+
+            aplicar_frontera(tipo_borde, campo);
         }
-        aplicar_frontera(tipo_borde, campo);
     }
 }
 
@@ -106,6 +143,10 @@ static void advectar(int tipo_borde, float *campo, const float *campo_previo,
     const float dt_malla = dt * (float)malla_n;
     const float limite   = (float)malla_n + 0.5f;
 
+    /* Cada celda destino solo lee campo_previo (no lo modifica), asi que se
+     * reparte entre hilos sin dependencias entre si. collapse(2) funde las
+     * dos dimensiones en un solo rango repartible, para que mallas chicas
+     * (menos filas que nucleos) sigan aprovechando todos los hilos. */
     for (j = 1; j <= malla_n; j++) {
         for (i = 1; i <= malla_n; i++) {
             /* Trazado hacia atras de la particula que llega a (i,j) */
