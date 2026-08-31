@@ -6,11 +6,18 @@ tablas de resultados a medida que se prueba cada version/rama.
 
 ## Mapa de ramas
 
-| Rama            | Binario        | Hilos | Solver de presion/difusion      | Fullscreen |
-|-----------------|----------------|-------|----------------------------------|------------|
-| `master`        | `ss`  | 1     | Gauss-Seidel fila por fila       | si (`-p`)  |
-| `sequential`    | `ss`  | 1     | Gauss-Seidel fila por fila       | si (`-p`)  |
-| `parallel-omp`  | `ss`  | N     | Red-black (paralelizable)        | no         |
+| Rama            | Binario           | Hilos | Solver de presion/difusion      | Fullscreen | CLI / codigo |
+|-----------------|-------------------|-------|----------------------------------|------------|--------------|
+| `master`        | `Screensaver_seq` | 1     | Gauss-Seidel fila por fila       | si (`-p`)  | vieja, sin tocar (congelada en `f6bca8a`) |
+| `sequential`    | `ss`              | 1     | Gauss-Seidel fila por fila       | si (`-p`)  | actual: ingles, sin `-t`/`-b`, `src/` plano |
+| `parallel-omp`  | `ss`              | N     | Red-black (paralelizable)        | no         | vieja, congelada antes de la traduccion/limpieza |
+
+`master` quedo intencionalmente sin tocar despues del reset a `f6bca8a` (ver
+el resto de esta conversacion): todo el trabajo de traduccion a ingles,
+aplanado de `src/secuencial/` a `src/`, renombrado del binario a `ss` y
+limpieza de la CLI (quitar `-t`/`-b`) paso unicamente en `sequential`. Si se
+compara con `master` hay que tener en cuenta que ese binario todavia se
+llama `Screensaver_seq`, sigue en espanol y sigue teniendo `-t`/`-b`.
 
 `sequential` = referencia correcta para medir speedup: mismos parametros,
 mismo comportamiento visual, sin OpenMP y con el algoritmo de solver que de
@@ -66,7 +73,7 @@ Estas no son ajustables por CLI, pero son relevantes si se quiere variar el
 | `DT_DEFAULT` | `0.07` | Paso de tiempo de la simulacion (ya no ajustable por CLI en `sequential`). |
 | `GAUSS_SEIDEL_ITERS` | `20` | Iteraciones del solver lineal por llamada — sube linealmente el costo de `solve_linear()`, que es el hotspot principal. |
 | `DISSIPATION` | `0.995` | Retencion de tinta por frame. |
-| `BRIGHTNESS_FACTOR` / `CONTRAST_FACTOR` / `SATURATION_FACTOR` | `0.6` / `1.0` / `2.4` | Solo afectan el render (color), no el costo computacional. |
+| `BRIGHTNESS_FACTOR` / `CONTRAST_FACTOR` / `SATURATION_FACTOR` / `ALPHA_GAMMA` | `0.6` / `1.0` / `2.4` / `0.7` | Solo afectan el render (color), no el costo computacional. |
 | `SOURCE_RADIUS_BASE` / `SOURCE_SIGMA_BASE` | `2` / `1.1` | Tamano del vecindario de inyeccion gaussiana por fuente; escala con `-n` via `source_scale()`. |
 | `NBODY_G` / `NBODY_SOFTENING` / `NBODY_VEL_MAX` / `NBODY_RESTITUTION` | `0.3` / `6.0` / `5.0` / `0.9` | Fisica del sistema de n-cuerpos (siempre activo); el costo es O(F^2) en cantidad de fuentes. |
 
