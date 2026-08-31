@@ -18,7 +18,14 @@ verdad es secuencial (no el red-black, que solo existe para poder
 paralelizarse — ver la nota en `solver.c`).
 
 `parallel-omp` es la version con OpenMP tal cual quedo tras el refactor de
-render/fuentes/fondo, con `-fopenmp` en el Makefile.
+render/fuentes/fondo, con `-fopenmp` en el Makefile. **A partir de aqui se
+deja como referencia congelada** (para ver el resultado final de a donde se
+quiere llegar) y todo el trabajo de optimizacion incremental se hace sobre
+`sequential`, creando una rama nueva por cada paso del checklist mas abajo.
+Por eso `parallel-omp` se quedo con `-b` desactivado por default y sin
+fullscreen — no se le sigue actualizando a la par de `sequential`. Al
+comparar FPS entre ramas, pasar los flags explicitamente (`-b`) en vez de
+confiar en el default, ya que default difiere entre ramas.
 
 Cuando se cree una rama nueva por cada optimizacion incremental (p.ej.
 `parallel-v1-omp-basico`, `parallel-v2-schedule-tuning`, etc.), agregar una
@@ -41,7 +48,7 @@ mas abajo.
 | `-t <dt>` | `[0.001..1.0]`, def. `0.07` | Paso de tiempo de la simulacion. |
 | `-v <visc>` | `[0.0..1.0]`, def. `0.0` | Viscosidad cinematica. |
 | `-d <diff>` | `[0.0..1.0]`, def. `0.0001` | Coeficiente de difusion de tinta (el "blur"/suavizado). |
-| `-b` | desactivado por default | Activa el sistema de n-cuerpos (fuentes con gravedad mutua). |
+| `-b` | activado por default en `sequential` (desactivado en `parallel-omp`, congelada) | Alterna el sistema de n-cuerpos (fuentes con gravedad mutua). |
 | `-p`, `-F` | desactivado por default | Pantalla completa (solo en `sequential`/`master` por ahora). |
 | `-h` | — | Ayuda. |
 
