@@ -8,7 +8,7 @@
 
 // Exponent of alpha's gamma curve, see render_ink(). Smaller means alpha
 // reaches opaque faster even at low ink brightness.
-#define ALPHA_GAMMA 0.7f
+#define ALPHA_GAMMA 0.35f
 
 // Bilinearly interpolates "field" at continuous position (fx, fy), in the
 // same coordinate space as a pixel index of the N x N texture. fx=0 is
