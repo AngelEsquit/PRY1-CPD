@@ -35,11 +35,12 @@ dt es fijo y el n-body siempre esta activo) y sin fullscreen — no se le sigue
 actualizando a la par de `sequential`. Al comparar FPS entre ramas, tener en
 cuenta que la CLI difiere.
 
-Las ramas de cada paso incremental ya estan creadas (ver "Roadmap de pasos"
-mas abajo: `rb-tree`, `omp-loops`, `omp-solver`, `schedule-tuning`,
-`collapse-tuning`, encadenadas en ese orden). Si se agrega un paso nuevo
-fuera de esa lista, crear su rama sobre la ultima de la cadena y sumarla
-tambien a esta tabla.
+**Ninguna rama de paso incremental existe todavia.** Todo el trabajo activo
+pasa en `sequential`: se implementa el paso ahi, se corre el benchmark, se
+llena la tabla, se hace commit, y **recien entonces** se crea la rama de
+ese paso como snapshot (ver "Roadmap de pasos" mas abajo para el orden y
+nombres planeados: `01-rb-tree`, `02-omp-loops`, `03-omp-solver`,
+`04-schedule-tuning`, `05-collapse-tuning`). No crear ramas por adelantado.
 
 ---
 
@@ -212,60 +213,61 @@ Los demas flags (viscosidad, difusion, ventana, etc.) no cambian el costo
 computacional, solo el aspecto visual — no hace falta variarlos en el
 benchmark de rendimiento.
 
-### Roadmap de pasos (branches)
+### Roadmap de pasos
 
-Cada paso es una rama real, ya creada y encadenada sobre la anterior (no
-todas parten de `sequential`: cada una construye sobre el trabajo de la
-rama previa, para que el resultado final acumule todo). Orden y estado:
+Orden planeado (nombres de rama sugeridos para cuando se llegue a cada
+uno — **ninguna de estas ramas existe todavia**, se crean sobre la marcha):
 
 ```
-sequential ──▶ rb-tree ──▶ omp-loops ──▶ omp-solver ──▶ schedule-tuning ──▶ collapse-tuning
+sequential ──▶ 01-rb-tree ──▶ 02-omp-loops ──▶ 03-omp-solver ──▶ 04-schedule-tuning ──▶ 05-collapse-tuning
 ```
 
 - [x] **`sequential`** — Paso 0, baseline. 1 hilo, n-body O(F^2) con fuerza
       bruta, solver Gauss-Seidel fila por fila. *(implementado; punto de
       partida, ya tiene su propia columna en la tabla maestra)*
-- [ ] **`rb-tree`** — Paso 1, arbol para n-body (Barnes-Hut): reemplazar el
+- [ ] **Paso 1 — `01-rb-tree`**: arbol para n-body (Barnes-Hut): reemplazar el
       loop O(F^2) de `update_nbody_sources()` (`nbody.c`) por un quadtree
       con aproximacion por centro de masa, O(F log F). Sigue siendo
       secuencial (sin OpenMP todavia) — el punto es medir cuanto gana el
       *algoritmo* solo, antes de meterle hilos. Para que el efecto se note
-      hace falta variar `-f` alto (64, 128, 256) ademas de `-n`. *(rama
-      creada, vacia — todavia no implementado)*
-- [ ] **`omp-loops`** — Paso 2, paralelizar los loops "faciles": los sitios
+      hace falta variar `-f` alto (64, 128, 256) ademas de `-n`.
+- [ ] **Paso 2 — `02-omp-loops`**: paralelizar los loops "faciles": los sitios
       1, 2, 4, 5, 6 del catalogo de arriba (fuente/disipacion/adveccion/
       proyeccion/render) — todos son `#pragma omp parallel for` directo,
       sin cambiar el algoritmo. El solver de presion/difusion se queda
-      secuencial todavia (sigue siendo Gauss-Seidel fila por fila). *(rama
-      creada sobre `rb-tree`, vacia)*
-- [ ] **`omp-solver`** — Paso 3, red-black + paralelizar el solver: el
+      secuencial todavia (sigue siendo Gauss-Seidel fila por fila).
+- [ ] **Paso 3 — `03-omp-solver`**: red-black + paralelizar el solver: el
       cambio algoritmico del catalogo (seccion 3 de arriba) — se espera que
-      sea el salto mas grande, es el hotspot principal. *(rama creada sobre
-      `omp-loops`, vacia)*
-- [ ] **`schedule-tuning`** — Paso 4, tuning de `schedule()`: probar
-      `static`/`dynamic`/`guided` y distintos tamanos de chunk sobre el
-      resultado del paso 3, variando `-n` (mallas chicas vs. grandes
-      reaccionan distinto al overhead de reparto de trabajo). *(rama creada
-      sobre `omp-solver`, vacia)*
-- [ ] **`collapse-tuning`** — Paso 5, `collapse(2)` si/no: comparar contra
+      sea el salto mas grande, es el hotspot principal.
+- [ ] **Paso 4 — `04-schedule-tuning`**: probar `static`/`dynamic`/`guided`
+      y distintos tamanos de chunk sobre el resultado del paso 3, variando
+      `-n` (mallas chicas vs. grandes reaccionan distinto al overhead de
+      reparto de trabajo).
+- [ ] **Paso 5 — `05-collapse-tuning`**: `collapse(2)` si/no, comparar contra
       paralelizar solo el loop externo, especialmente relevante en `-n`
-      chico (menos filas que `nproc`). *(rama creada sobre
-      `schedule-tuning`, vacia)*
-- [ ] **Paso 6 (opcional, sin rama todavia)** — SIMD / autovectorizacion,
-      `-O2` vs `-O3` como variable de build. Crear la rama sobre
-      `collapse-tuning` cuando se llegue a este punto.
+      chico (menos filas que `nproc`).
+- [ ] **Paso 6 (opcional)** — SIMD / autovectorizacion, `-O2` vs `-O3` como
+      variable de build.
 
-`parallel-omp` (la rama congelada, fuera de esta cadena) ya tiene
-implementados los pasos 2 y 3 juntos (mas los cambios visuales de
-resolucion/fondo/render que no son parte de este roadmap de performance) —
-sirve como referencia de "a donde se puede llegar", pero la cadena de arriba
-se construye de nuevo, paso por paso, para poder medir cada incremento por
-separado.
+`parallel-omp` (la rama congelada) ya tiene implementados los pasos 2 y 3
+juntos (mas los cambios visuales de resolucion/fondo/render que no son
+parte de este roadmap de performance) — sirve como referencia de "a donde
+se puede llegar", pero la cadena de arriba se construye de nuevo, paso por
+paso, para poder medir cada incremento por separado.
 
-Flujo de trabajo por paso: `git checkout <rama-del-paso>`, implementar,
-correr la bateria de benchmark completa (ver mas abajo), pegar resultados en
-la tabla maestra, commit, marcar el checkbox de arriba. El siguiente paso ya
-esta creado sobre este y listo para hacer checkout en cuanto se termine.
+**Flujo de trabajo real, un paso a la vez** (todo el trabajo activo pasa en
+`sequential` hasta terminar un paso):
+
+1. Sobre `sequential`, implementar el cambio del paso actual.
+2. Compilar (`make`) y correr la bateria de benchmark completa (ver abajo).
+3. Pegar los resultados en la tabla maestra de este documento.
+4. Commit en `sequential` (codigo + tabla actualizada + checkbox marcado).
+5. Recien ahi, crear la rama de este paso apuntando a ese commit
+   (`git branch <nombre-del-paso>`, p.ej. `git branch 01-rb-tree` despues de
+   terminar el Paso 1) como snapshot/checkpoint — no antes.
+6. Seguir trabajando en `sequential` para el siguiente paso.
+
+No crear ramas por adelantado para pasos que todavia no se implementaron.
 
 ---
 
@@ -358,7 +360,7 @@ for row in "A 64 6" "B 256 6" "C 512 6" "D 1024 6" "E 256 4" "F 256 64" "G 256 2
 done
 ```
 
-A partir del Paso 2 (`omp-loops` en adelante, cuando ya hay OpenMP), repetir
+A partir del Paso 2 (`02-omp-loops` en adelante, cuando ya hay OpenMP), repetir
 tambien la fila B variando `OMP_NUM_THREADS` para la curva de
 escalabilidad:
 
@@ -377,7 +379,7 @@ done
 FPS promedio por combinacion de fila-de-matriz x paso. Ir agregando una
 columna por cada paso conforme se implementa y se corre la bateria.
 
-| Fila matriz | `sequential` | `rb-tree` | `omp-loops` | `omp-solver` | `schedule-tuning` | `collapse-tuning` |
+| Fila matriz | `sequential` | `01-rb-tree` | `02-omp-loops` | `03-omp-solver` | `04-schedule-tuning` | `05-collapse-tuning` |
 |---|---|---|---|---|---|---|
 | A (n=64, f=6) | | | | | | |
 | B (n=256, f=6) | | | | | | |
@@ -391,7 +393,7 @@ columna por cada paso conforme se implementa y se corre la bateria.
 
 Usar la fila B (n=256, f=6) como referencia, variando `OMP_NUM_THREADS`:
 
-| Hilos | FPS `omp-loops` | FPS `omp-solver` | FPS `schedule-tuning` | FPS `collapse-tuning` |
+| Hilos | FPS `02-omp-loops` | FPS `03-omp-solver` | FPS `04-schedule-tuning` | FPS `05-collapse-tuning` |
 |-------|------------------|-------------------|-------------------------|--------------------------|
 | 1     |                  |                   |                         |                          |
 | 2     |                  |                   |                         |                          |
@@ -409,7 +411,7 @@ punto donde se crearon daran resultados; las que siguen vacias daran el
 mismo numero que su padre, eso es esperado):
 
 ```bash
-for branch in sequential rb-tree omp-loops omp-solver schedule-tuning collapse-tuning parallel-omp; do
+for branch in sequential 01-rb-tree 02-omp-loops 03-omp-solver 04-schedule-tuning 05-collapse-tuning parallel-omp; do
   git checkout "$branch" >/dev/null 2>&1 && make clean >/dev/null && make >/dev/null 2>&1 && \
     printf "%-18s" "$branch" && \
     timeout 20s ./ss -n 256 -f 6 -s 42 2>/dev/null | grep "FPS=" | tail -n +5 \
