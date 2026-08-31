@@ -1,4 +1,4 @@
-#include "campos.h"
+#include "fields.h"
 
 #include <stdio.h>
 #include <stdlib.h>

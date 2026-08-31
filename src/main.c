@@ -47,14 +47,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "comun.h"
-#include "configuracion.h"
-#include "campos.h"
-#include "fuentes.h"
-#include "ncuerpos.h"
+#include "common.h"
+#include "config.h"
+#include "fields.h"
+#include "sources.h"
+#include "nbody.h"
 #include "solver.h"
 #include "render.h"
-#include "fondo.h"
+#include "background.h"
 
 /* Resolucion de la malla; global para que la macro IX() sea legible.
  * Unica definicion del proyecto (declarada extern en comun.h para que el

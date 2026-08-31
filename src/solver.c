@@ -1,6 +1,6 @@
 #include "solver.h"
-#include "comun.h"
-#include "utilidades.h"
+#include "common.h"
+#include "utils.h"
 
 /*
  * Aplica las condiciones de frontera sobre el anillo de celdas fantasma.

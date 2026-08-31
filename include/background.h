@@ -1,5 +1,5 @@
-#ifndef FONDO_H
-#define FONDO_H
+#ifndef BACKGROUND_H
+#define BACKGROUND_H
 
 #include <SDL2/SDL.h>
 
@@ -47,4 +47,4 @@ void actualizar_fondo(Estrella *estrellas, int cantidad);
 void dibujar_fondo(SDL_Renderer *renderizador, const Estrella *estrellas,
                    int cantidad);
 
-#endif /* FONDO_H */
+#endif /* BACKGROUND_H */

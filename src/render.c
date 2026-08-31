@@ -1,6 +1,6 @@
 #include "render.h"
-#include "comun.h"
-#include "utilidades.h"
+#include "common.h"
+#include "utils.h"
 
 #include <math.h>
 #include <stddef.h>

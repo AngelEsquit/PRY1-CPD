@@ -1,7 +1,7 @@
-#ifndef NCUERPOS_H
-#define NCUERPOS_H
+#ifndef NBODY_H
+#define NBODY_H
 
-#include "fuentes.h"
+#include "sources.h"
 
 /* ===========================================================================
  * ncuerpos.h
@@ -17,4 +17,4 @@
  */
 void actualizar_fuentes_nbody(FuenteTinta *fuentes, int cantidad, int resolucion);
 
-#endif /* NCUERPOS_H */
+#endif /* NBODY_H */

@@ -1,5 +1,5 @@
-#ifndef CONFIGURACION_H
-#define CONFIGURACION_H
+#ifndef CONFIG_H
+#define CONFIG_H
 
 /* ===========================================================================
  * configuracion.h
@@ -31,4 +31,4 @@ typedef struct {
  */
 int procesar_argumentos(int argc, char *argv[], Configuracion *config);
 
-#endif /* CONFIGURACION_H */
+#endif /* CONFIG_H */

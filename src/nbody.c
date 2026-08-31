@@ -1,7 +1,7 @@
-#include "ncuerpos.h"
-#include "comun.h"
-#include "fuentes.h"
-#include "utilidades.h"
+#include "nbody.h"
+#include "common.h"
+#include "sources.h"
+#include "utils.h"
 
 #include <math.h>
 

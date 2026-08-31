@@ -1,5 +1,5 @@
-#ifndef CAMPOS_H
-#define CAMPOS_H
+#ifndef FIELDS_H
+#define FIELDS_H
 
 /* ===========================================================================
  * campos.h
@@ -35,4 +35,4 @@ void liberar_campos(CamposFluido *campos);
 /* Pone todos los campos en cero (usado al reiniciar con la tecla R). */
 void limpiar_campos(CamposFluido *campos);
 
-#endif /* CAMPOS_H */
+#endif /* FIELDS_H */

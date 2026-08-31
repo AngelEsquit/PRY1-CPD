@@ -1,6 +1,6 @@
-#include "fondo.h"
-#include "comun.h"
-#include "utilidades.h"
+#include "background.h"
+#include "common.h"
+#include "utils.h"
 
 #include <math.h>
 

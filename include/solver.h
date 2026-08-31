@@ -1,7 +1,7 @@
 #ifndef SOLVER_H
 #define SOLVER_H
 
-#include "campos.h"
+#include "fields.h"
 
 /* ===========================================================================
  * solver.h

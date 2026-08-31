@@ -1,5 +1,5 @@
-#include "configuracion.h"
-#include "comun.h"
+#include "config.h"
+#include "common.h"
 
 #include <stdio.h>
 #include <stdlib.h>

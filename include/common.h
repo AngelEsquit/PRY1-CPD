@@ -1,5 +1,5 @@
-#ifndef COMUN_H
-#define COMUN_H
+#ifndef COMMON_H
+#define COMMON_H
 
 /* ===========================================================================
  * comun.h
@@ -69,4 +69,4 @@ extern int malla_n;
 #define BND_VEL_X     1  /* componente x de velocidad: se refleja en muros    */
 #define BND_VEL_Y     2  /* componente y de velocidad: se refleja en muros    */
 
-#endif /* COMUN_H */
+#endif /* COMMON_H */

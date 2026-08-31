@@ -2,7 +2,7 @@
 #define RENDER_H
 
 #include <SDL2/SDL.h>
-#include "campos.h"
+#include "fields.h"
 
 /* ===========================================================================
  * render.h

@@ -1,5 +1,5 @@
-#ifndef UTILIDADES_H
-#define UTILIDADES_H
+#ifndef UTILS_H
+#define UTILS_H
 
 /* ===========================================================================
  * utilidades.h
@@ -12,4 +12,4 @@ float aleatorio_rango(float minimo, float maximo);
 /* Limita un valor flotante al intervalo [minimo, maximo]. */
 float acotar(float valor, float minimo, float maximo);
 
-#endif /* UTILIDADES_H */
+#endif /* UTILS_H */

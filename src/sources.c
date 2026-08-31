@@ -1,6 +1,6 @@
-#include "fuentes.h"
-#include "comun.h"
-#include "utilidades.h"
+#include "sources.h"
+#include "common.h"
+#include "utils.h"
 
 #include <string.h>
 #include <math.h>

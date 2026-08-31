@@ -1,7 +1,7 @@
-#ifndef FUENTES_H
-#define FUENTES_H
+#ifndef SOURCES_H
+#define SOURCES_H
 
-#include "campos.h"
+#include "fields.h"
 
 /* ===========================================================================
  * fuentes.h
@@ -98,4 +98,4 @@ void inyectar_fuentes(FuenteTinta *fuentes, int cantidad, CamposFluido *campos,
  */
 void disipar_tinta(CamposFluido *campos);
 
-#endif /* FUENTES_H */
+#endif /* SOURCES_H */
