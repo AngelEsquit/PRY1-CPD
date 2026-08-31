@@ -8,7 +8,7 @@
 
 /* Exponent of alpha's gamma curve (see render_ink): the smaller it is, the
  * faster alpha reaches opaque with little ink brightness. */
-#define ALPHA_GAMMA 0.35f
+#define ALPHA_GAMMA 0.7f
 
 /*
  * Bilinearly interpolates "field" (an N x N grid with a ghost ring) at the
