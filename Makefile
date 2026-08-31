@@ -2,10 +2,10 @@
 # Sequential version organized into functional modules.
 
 CC       = gcc
-CFLAGS   = -std=c11 -Wall -Wextra -O2 -Iinclude
+CFLAGS   = -std=c11 -Wall -Wextra -O2 -Iinclude -fopenmp
 SDLFLAGS = $(shell pkg-config --cflags sdl2)
 SDLLIBS  = $(shell pkg-config --libs sdl2)
-LIBS     = $(SDLLIBS) -lm
+LIBS     = $(SDLLIBS) -lm -fopenmp
 
 SRC      = $(shell find src -type f -name '*.c' | sort)
 BIN      = ss

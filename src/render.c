@@ -58,11 +58,18 @@ void render_ink(SDL_Texture *texture, const FluidFields *fields,
 
     pixels = (Uint32 *)raw_pixels;
 
+    // Each pixel only reads the ink fields, never writes them, so this is
+    // safe to split across threads. collapse(2) needs perfectly nested
+    // loops, so `row`/`fy` (otherwise hoisted out of the inner loop since
+    // fy only depends on j) get recomputed per pixel instead: a cheap
+    // recalculation that lets narrow grids still spread work over every
+    // thread instead of just the outer loop.
+    #pragma omp parallel for collapse(2) \
+        private(fx, fy, value_r, value_g, value_b, average) schedule(dynamic, 16)
     for (j = 0; j < texture_height; j++) {
-        Uint32 *row = pixels + (size_t)j * ((size_t)pitch_bytes / sizeof(Uint32));
-        fy = ((float)j + 0.5f) * scale_y - 0.5f;
-
         for (i = 0; i < texture_width; i++) {
+            Uint32 *row = pixels + (size_t)j * ((size_t)pitch_bytes / sizeof(Uint32));
+            fy = ((float)j + 0.5f) * scale_y - 0.5f;
             fx = ((float)i + 0.5f) * scale_x - 0.5f;
 
             // Reinhard-style tone mapping (x / (x + k)) instead of a hard

@@ -147,6 +147,7 @@ void inject_sources(InkSource *sources, int count, FluidFields *fields,
 void dissipate_ink(FluidFields *fields)
 {
     int i;
+    #pragma omp parallel for schedule(dynamic, 16)
     for (i = 0; i < fields->total_cells; i++) {
         fields->ink_r[i] *= DISSIPATION;
         fields->ink_g[i] *= DISSIPATION;

@@ -43,6 +43,8 @@ static void apply_boundary(int bnd_type, float *field) {
 static void add_source(float *dest, const float *source, float dt,
                        int total_cells) {
   int i;
+  // Each cell only touches itself, safe to split across threads as-is.
+  #pragma omp parallel for schedule(dynamic, 16)
   for (i = 0; i < total_cells; i++) {
     dest[i] += dt * source[i]; // Just add it in, cell by cell.
   }
@@ -97,6 +99,13 @@ static void advect(int bnd_type, float *field, const float *field_prev,
   const float dt_grid = dt * (float)grid_n;
   const float limit = (float)grid_n + 0.5f;
 
+  // Each destination cell only reads field_prev (never writes it), so the
+  // grid can be split across threads freely. collapse(2) merges both loops
+  // into one range so narrow grids (fewer rows than threads) still spread
+  // work across all of them.
+  #pragma omp parallel for collapse(2) \
+      private(i0, i1, j0, j1, origin_x, origin_y, \
+              weight_i1, weight_i0, weight_j1, weight_j0) schedule(dynamic, 16)
   for (j = 1; j <= grid_n; j++) {
     for (i = 1; i <= grid_n; i++) {
       // Step backward along this cell's own velocity.
@@ -140,6 +149,7 @@ static void project(float *vel_x, float *vel_y, float *pressure,
   const float h = 1.0f / (float)grid_n;
 
   // Measure how much more velocity leaves each cell than enters it.
+  #pragma omp parallel for collapse(2) schedule(dynamic, 16)
   for (j = 1; j <= grid_n; j++) {
     for (i = 1; i <= grid_n; i++) {
       divergence[IX(i, j)] = -0.5f * h *
@@ -155,6 +165,7 @@ static void project(float *vel_x, float *vel_y, float *pressure,
   solve_linear(BND_SCALAR, pressure, divergence, 1.0f, 4.0f);
 
   // Push velocity away from high pressure, toward low.
+  #pragma omp parallel for collapse(2) schedule(dynamic, 16)
   for (j = 1; j <= grid_n; j++) {
     for (i = 1; i <= grid_n; i++) {
       vel_x[IX(i, j)] -=
