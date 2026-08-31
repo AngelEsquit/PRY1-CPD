@@ -222,15 +222,18 @@ uno — **ninguna de estas ramas existe todavia**, se crean sobre la marcha):
 sequential ──▶ 01-rb-tree ──▶ 02-omp-loops ──▶ 03-omp-solver ──▶ 04-schedule-tuning ──▶ 05-collapse-tuning
 ```
 
-- [x] **`sequential`** — Paso 0, baseline. 1 hilo, n-body O(F^2) con fuerza
-      bruta, solver Gauss-Seidel fila por fila. *(implementado; punto de
-      partida, ya tiene su propia columna en la tabla maestra)*
-- [ ] **Paso 1 — `01-rb-tree`**: arbol para n-body (Barnes-Hut): reemplazar el
+- [x] **Paso 0, baseline** — 1 hilo, n-body O(F^2) con fuerza bruta, solver
+      Gauss-Seidel fila por fila. *(ya no es la punta de `sequential`, que
+      avanzo al Paso 1 -- este estado sigue vivo en `master`, que se quedo
+      congelada ahi a proposito. Columna "baseline" en la tabla maestra.)*
+- [x] **Paso 1 — `01-rb-tree`**: arbol para n-body (Barnes-Hut): reemplazo el
       loop O(F^2) de `update_nbody_sources()` (`nbody.c`) por un quadtree
       con aproximacion por centro de masa, O(F log F). Sigue siendo
-      secuencial (sin OpenMP todavia) — el punto es medir cuanto gana el
-      *algoritmo* solo, antes de meterle hilos. Para que el efecto se note
-      hace falta variar `-f` alto (64, 128, 256) ademas de `-n`.
+      secuencial (sin OpenMP todavia). *(implementado y medido -- FPS
+      practicamente identico al baseline en todo el rango probado, incluso
+      con f alto: a estas resoluciones el solver de fluidos domina tanto
+      que el algoritmo de n-body no se nota todavia. Commit vive en
+      `sequential`, con `01-rb-tree` apuntando al mismo commit.)*
 - [ ] **Paso 2 — `02-omp-loops`**: paralelizar los loops "faciles": los sitios
       1, 2, 4, 5, 6 del catalogo de arriba (fuente/disipacion/adveccion/
       proyeccion/render) — todos son `#pragma omp parallel for` directo,
@@ -362,23 +365,32 @@ done
 FPS promedio por combinacion de fila-de-matriz x paso. Ir agregando una
 columna por cada paso conforme se implementa y se corre la bateria.
 
-| Fila matriz | `sequential` | `01-rb-tree` | `02-omp-loops` | `03-omp-solver` | `04-schedule-tuning` | `05-collapse-tuning` |
+| Fila matriz | baseline (`master`, pre-Barnes-Hut) | `sequential` / `01-rb-tree` (Barnes-Hut) | `02-omp-loops` | `03-omp-solver` | `04-schedule-tuning` | `05-collapse-tuning` |
 |---|---|---|---|---|---|---|
-| A6 (n=64, f=6) | | | | | | |
-| A12 (n=64, f=12) | | | | | | |
-| B6 (n=256, f=6) | | | | | | |
-| B12 (n=256, f=12) | | | | | | |
-| C6 (n=512, f=6) | | | | | | |
-| C12 (n=512, f=12) | | | | | | |
-| H6 (n=600, f=6) | | | | | | |
-| H12 (n=600, f=12) | | | | | | |
-| I6 (n=700, f=6) | | | | | | |
-| I12 (n=700, f=12) | | | | | | |
-| D6 (n=1024, f=6) | | | | | | |
-| D12 (n=1024, f=12) | | | | | | |
-| E (n=256, f=4) | | | | | | |
-| F (n=256, f=64) | | | | | | |
-| G (n=256, f=256) | | | | | | |
+| A6 (n=64, f=6) | 17.21 | 17.19 | | | | |
+| A12 (n=64, f=12) | 17.16 | 17.20 | | | | |
+| B6 (n=256, f=6) | 10.52 | 10.51 | | | | |
+| B12 (n=256, f=12) | 10.95 | 10.95 | | | | |
+| C6 (n=512, f=6) | 3.75 | 3.76 | | | | |
+| C12 (n=512, f=12) | 4.30 | 4.30 | | | | |
+| H6 (n=600, f=6) | 2.69 | 2.69 | | | | |
+| H12 (n=600, f=12) | 3.09 | 3.09 | | | | |
+| I6 (n=700, f=6) | 1.90 | 1.91 | | | | |
+| I12 (n=700, f=12) | 2.10 | 2.10 | | | | |
+| D6 (n=1024, f=6) | 0.92 | 0.92 | | | | |
+| D12 (n=1024, f=12) | 1.00 | 0.99 | | | | |
+| E (n=256, f=4) | 7.52 | 7.52 | | | | |
+| F (n=256, f=64) | 11.39 | 11.39 | | | | |
+| G (n=256, f=256) | 11.37 | 11.38 | | | | |
+
+Medido en local (display real, no headless), corridas de ~15s por fila,
+promedio ignorando los primeros ~2s de warm-up, `-s 42` en todas.
+Barnes-Hut da practicamente el mismo FPS que fuerza bruta en todo el rango
+probado (incluyendo f=64/256): a estas resoluciones de malla el solver de
+fluidos domina tanto el costo que el algoritmo de n-cuerpos, sea O(F^2) o
+O(F log F), no se nota en el FPS total. Sigue siendo la base correcta para
+cuando se paralelice el solver (Pasos 2+), donde el resto del frame sera
+mas barato relativamente y el n-body podria empezar a pesar mas.
 
 ### Curva de escalabilidad por hilos (desde el Paso 2 en adelante)
 
