@@ -2,6 +2,37 @@
 #include "common.h"
 #include "utils.h"
 
+/* ===========================================================================
+ * solver.c -- the numerical core (Jos Stam's "Stable Fluids", 1999)
+ * ---------------------------------------------------------------------------
+ * Each frame, velocity_step() and ink_step() run the same four operators in
+ * sequence on their respective fields:
+ *
+ *   add_source  -> apply_boundary is NOT called here; sources.c already
+ *                  wrote directly into the *_p ("previous") buffers, this
+ *                  just adds dt * that into the real field.
+ *   diffuse     -> solve_linear(): an implicit (unconditionally stable)
+ *                  diffusion solve via Gauss-Seidel relaxation. This is the
+ *                  hotspot -- GAUSS_SEIDEL_ITERS sweeps of the whole grid,
+ *                  called multiple times per frame.
+ *   advect      -> semi-Lagrangian backward trace + bilinear interpolation.
+ *                  Also unconditionally stable, at the cost of some
+ *                  numerical smoothing.
+ *   project     -> ONLY applied to velocity, never to ink. Removes
+ *                  divergence (enforces incompressibility) via a Poisson
+ *                  solve, which is also what produces the swirling motion.
+ *
+ * apply_boundary() is the plumbing all of the above shares: it fills the
+ * grid's 1-cell ghost ring (see its own comment below) so that diffuse/
+ * advect/project never need special-case logic for edge cells -- they just
+ * read whatever is in the ghost ring as if it were a real neighbor.
+ *
+ * velocity_step() is the only one that calls project(), and calls it twice
+ * (once after diffusion, once after advection) because both of those steps
+ * reintroduce a little divergence into the field, undoing the previous
+ * projection.
+ * ======================================================================== */
+
 /*
  * Applies the boundary conditions over the ring of ghost cells.
  *   bnd_type = BND_SCALAR -> the border copies the interior neighbor (Neumann)
