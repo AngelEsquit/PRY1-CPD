@@ -8,9 +8,9 @@ tablas de resultados a medida que se prueba cada version/rama.
 
 | Rama            | Binario        | Hilos | Solver de presion/difusion      | Fullscreen |
 |-----------------|----------------|-------|----------------------------------|------------|
-| `master`        | `Screensaver`  | 1     | Gauss-Seidel fila por fila       | si (`-p`)  |
-| `sequential`    | `Screensaver`  | 1     | Gauss-Seidel fila por fila       | si (`-p`)  |
-| `parallel-omp`  | `Screensaver`  | N     | Red-black (paralelizable)        | no         |
+| `master`        | `ss`  | 1     | Gauss-Seidel fila por fila       | si (`-p`)  |
+| `sequential`    | `ss`  | 1     | Gauss-Seidel fila por fila       | si (`-p`)  |
+| `parallel-omp`  | `ss`  | N     | Red-black (paralelizable)        | no         |
 
 `sequential` = referencia correcta para medir speedup: mismos parametros,
 mismo comportamiento visual, sin OpenMP y con el algoritmo de solver que de
@@ -22,10 +22,11 @@ render/fuentes/fondo, con `-fopenmp` en el Makefile. **A partir de aqui se
 deja como referencia congelada** (para ver el resultado final de a donde se
 quiere llegar) y todo el trabajo de optimizacion incremental se hace sobre
 `sequential`, creando una rama nueva por cada paso del checklist mas abajo.
-Por eso `parallel-omp` se quedo con `-b` desactivado por default y sin
-fullscreen — no se le sigue actualizando a la par de `sequential`. Al
-comparar FPS entre ramas, pasar los flags explicitamente (`-b`) en vez de
-confiar en el default, ya que default difiere entre ramas.
+`parallel-omp` tambien quedo congelada con la CLI vieja (todavia tiene `-t`
+para dt y `-b` para alternar n-body, ambos ya eliminados en `sequential`: ahi
+dt es fijo y el n-body siempre esta activo) y sin fullscreen — no se le sigue
+actualizando a la par de `sequential`. Al comparar FPS entre ramas, tener en
+cuenta que la CLI difiere.
 
 Cuando se cree una rama nueva por cada optimizacion incremental (p.ej.
 `parallel-v1-omp-basico`, `parallel-v2-schedule-tuning`, etc.), agregar una
@@ -36,7 +37,7 @@ mas abajo.
 
 ## Parametros (linea de comandos y constantes)
 
-### Flags de `./Screensaver`
+### Flags de `./ss`
 
 | Flag | Rango / default | Efecto |
 |------|------------------|--------|
@@ -45,12 +46,15 @@ mas abajo.
 | `-W <ancho>` | min. `640`, def. `1920` | Ancho de ventana en px (no afecta el costo del solver, solo el de render). |
 | `-H <alto>` | min. `480`, def. `1080` | Alto de ventana en px. |
 | `-s <semilla>` | def. reloj del sistema | Semilla PRNG — fijarla para comparaciones reproducibles entre corridas. |
-| `-t <dt>` | `[0.001..1.0]`, def. `0.07` | Paso de tiempo de la simulacion. |
 | `-v <visc>` | `[0.0..1.0]`, def. `0.0` | Viscosidad cinematica. |
 | `-d <diff>` | `[0.0..1.0]`, def. `0.0001` | Coeficiente de difusion de tinta (el "blur"/suavizado). |
-| `-b` | activado por default en `sequential` (desactivado en `parallel-omp`, congelada) | Alterna el sistema de n-cuerpos (fuentes con gravedad mutua). |
 | `-p`, `-F` | desactivado por default | Pantalla completa (solo en `sequential`/`master` por ahora). |
 | `-h` | — | Ayuda. |
+
+`dt` ya no es ajustable por CLI (queda fijo en `DT_DEFAULT`) y el sistema de
+n-cuerpos siempre esta activo (no hay flag para desactivarlo) — ambos
+simplificados fuera de la rama `parallel-omp`, que sigue teniendo `-t` y
+`-b` por ser una rama congelada con la CLI vieja.
 
 ### Constantes (`include/common.h`, `include/sources.h`, `src/nbody.c`)
 
@@ -59,16 +63,18 @@ Estas no son ajustables por CLI, pero son relevantes si se quiere variar el
 
 | Constante | Valor | Que hace |
 |---|---|---|
+| `DT_DEFAULT` | `0.07` | Paso de tiempo de la simulacion (ya no ajustable por CLI en `sequential`). |
 | `GAUSS_SEIDEL_ITERS` | `20` | Iteraciones del solver lineal por llamada — sube linealmente el costo de `solve_linear()`, que es el hotspot principal. |
-| `DISIPACION` | `0.995` | Retencion de tinta por frame. |
-| `BRILLO_FACTOR` / `CONTRASTE_FACTOR` / `SATURACION_FACTOR` | `0.6` / `1.0` / `2.4` | Solo afectan el render (color), no el costo computacional. |
-| `FUENTE_RADIO_BASE` / `FUENTE_SIGMA_BASE` | `2` / `1.1` | Tamano del vecindario de inyeccion gaussiana por fuente; escala con `-n` via `fuente_escala()`. |
-| `NBODY_G` / `NBODY_SUAVIZADO` / `NBODY_VEL_MAX` / `NBODY_RESTITUCION` | `0.3` / `6.0` / `5.0` / `0.9` | Fisica del sistema de n-cuerpos (solo con `-b`); el costo es O(F^2) en cantidad de fuentes. |
+| `DISSIPATION` | `0.995` | Retencion de tinta por frame. |
+| `BRIGHTNESS_FACTOR` / `CONTRAST_FACTOR` / `SATURATION_FACTOR` | `0.6` / `1.0` / `2.4` | Solo afectan el render (color), no el costo computacional. |
+| `SOURCE_RADIUS_BASE` / `SOURCE_SIGMA_BASE` | `2` / `1.1` | Tamano del vecindario de inyeccion gaussiana por fuente; escala con `-n` via `source_scale()`. |
+| `NBODY_G` / `NBODY_SOFTENING` / `NBODY_VEL_MAX` / `NBODY_RESTITUTION` | `0.3` / `6.0` / `5.0` / `0.9` | Fisica del sistema de n-cuerpos (siempre activo); el costo es O(F^2) en cantidad de fuentes. |
 
 **Parametros clave para el plan de benchmarking**: `-n` (resolucion de malla,
-el que mas importa), `-f` (cantidad de fuentes), `-b` (activa costo O(F^2)
-extra), y el numero de hilos OpenMP (`OMP_NUM_THREADS`, ver abajo — no es un
-flag del programa, es una variable de entorno).
+el que mas importa), `-f` (cantidad de fuentes, que ahora siempre mueve el
+costo O(F^2) del n-body ya que esta siempre activo), y el numero de hilos
+OpenMP (`OMP_NUM_THREADS`, ver abajo — no es un flag del programa, es una
+variable de entorno).
 
 ---
 
@@ -92,7 +98,7 @@ rama incremental que las va agregando una por una.
 ### 2. `dissipate_ink()` — `src/sources.c`
 
 - Mismo patron que (1): `#pragma omp parallel for schedule(dynamic, 16)`
-  sobre un loop plano e independiente por celda (`tinta *= DISIPACION`).
+  sobre un loop plano e independiente por celda (`tinta *= DISSIPATION`).
 
 ### 3. Solver de presion/difusion: Gauss-Seidel -> red-black — `src/solver.c`
 
@@ -191,10 +197,11 @@ al-final.
 El eje que mas importa variar en cada bateria es **`-n`** (tamano de
 celda/resolucion de la malla) porque domina el costo (`O(N^2)` por
 iteracion, y son `GAUSS_SEIDEL_ITERS` iteraciones por paso, varias veces por
-frame). El eje secundario es **`-f`** (cantidad de fuentes/cuerpos), que solo
-pesa cuando el n-body esta activo (`O(F^2)` sin arbol, `O(F log F)` con
-arbol). Los demas flags (viscosidad, difusion, ventana, etc.) no cambian el
-costo computacional, solo el aspecto visual — no hace falta variarlos en el
+frame). El eje secundario es **`-f`** (cantidad de fuentes/cuerpos): el
+n-body siempre esta activo, asi que `-f` mueve directamente su costo
+(`O(F^2)` sin arbol, `O(F log F)` con arbol) ademas del costo de inyeccion.
+Los demas flags (viscosidad, difusion, ventana, etc.) no cambian el costo
+computacional, solo el aspecto visual — no hace falta variarlos en el
 benchmark de rendimiento.
 
 ### Roadmap de pasos (branches)
@@ -246,7 +253,7 @@ paso, desde `sequential`, para poder medir cada incremento por separado.
 2. **Reproducibilidad**: fijar siempre la semilla (`-s 42`).
 3. **Comando base** (ajustar `-n`/`-f`/flags segun la fila de la tabla):
    ```bash
-   timeout 30s ./Screensaver -n <N> -f <F> -s 42 2>/dev/null \
+   timeout 30s ./ss -n <N> -f <F> -s 42 2>/dev/null \
      | grep "FPS=" | tail -n +6 \
      | awk -F'= ' '{s+=$2; c++} END {printf "FPS promedio: %.2f\n", s/c}'
    ```
@@ -254,7 +261,7 @@ paso, desde `sequential`, para poder medir cada incremento por separado.
 4. **Hilos OpenMP** (solo aplica desde el Paso 2 en adelante): controlar sin
    recompilar con `OMP_NUM_THREADS`:
    ```bash
-   OMP_NUM_THREADS=4 ./Screensaver -n 256 -f 6 -s 42
+   OMP_NUM_THREADS=4 ./ss -n 256 -f 6 -s 42
    ```
    Nucleos disponibles en esta maquina: `nproc` → **20**. Para los pasos que
    todavia no tienen OpenMP, correr con 1 hilo nada mas (no aplica variar).
@@ -268,15 +275,15 @@ Repetir esta misma matriz completa despues de cada paso del roadmap y pegar
 los resultados en la tabla maestra de abajo (agregar mas filas de matriz
 si algun paso lo amerita, p.ej. mas hilos una vez que haya OpenMP):
 
-| # | `-n` | `-f` | `-b` | Hilos | Por que esta en la matriz |
-|---|------|------|------|-------|------------------------------|
-| A | 64   | 6    | on   | 1     | malla chica, referencia rapida |
-| B | 256  | 6    | on   | 1     | default del programa |
-| C | 512  | 6    | on   | 1     | malla grande, domina el solver |
-| D | 1024 | 6    | on   | 1     | malla muy grande, limite superior |
-| E | 256  | 4    | on   | 1     | pocos cuerpos |
-| F | 256  | 64   | on   | 1     | muchos cuerpos, resalta el costo O(F^2)/O(F log F) del n-body |
-| G | 256  | 256  | on   | 1     | limite superior de cuerpos |
+| # | `-n` | `-f` | Hilos | Por que esta en la matriz |
+|---|------|------|-------|------------------------------|
+| A | 64   | 6    | 1     | malla chica, referencia rapida |
+| B | 256  | 6    | 1     | default del programa |
+| C | 512  | 6    | 1     | malla grande, domina el solver |
+| D | 1024 | 6    | 1     | malla muy grande, limite superior |
+| E | 256  | 4    | 1     | pocas fuentes/cuerpos |
+| F | 256  | 64   | 1     | muchas fuentes/cuerpos, resalta el costo O(F^2)/O(F log F) del n-body |
+| G | 256  | 256  | 1     | limite superior de fuentes/cuerpos |
 
 A partir del Paso 2 (cuando ya hay OpenMP), repetir tambien B con
 `OMP_NUM_THREADS` en `{1, 2, 4, 8, 16, 20}` para tener la curva de
@@ -318,8 +325,8 @@ Usar la fila B (n=256, f=6) como referencia, variando `OMP_NUM_THREADS`:
 
 ```bash
 git checkout sequential  && make clean && make && \
-  timeout 20s ./Screensaver -n 256 -f 6 -s 42 2>/dev/null | grep "FPS=" | tail -n +5
+  timeout 20s ./ss -n 256 -f 6 -s 42 2>/dev/null | grep "FPS=" | tail -n +5
 
 git checkout parallel-omp && make clean && make && \
-  timeout 20s ./Screensaver -n 256 -f 6 -s 42 2>/dev/null | grep "FPS=" | tail -n +5
+  timeout 20s ./ss -n 256 -f 6 -s 42 2>/dev/null | grep "FPS=" | tail -n +5
 ```

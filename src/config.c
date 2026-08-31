@@ -20,11 +20,8 @@ static void print_help(const char *program_name)
         "  -W <width>   Window width in pixels                  (min. %d, def. %d)\n"
         "  -H <height>  Window height in pixels                 (min. %d, def. %d)\n"
         "  -s <seed>    Pseudo-random seed                      (def. system clock)\n"
-        "  -t <dt>      Simulation time step                    (def. %.3f)\n"
         "  -v <visc>    Kinematic viscosity of the fluid        (def. %.5f)\n"
         "  -d <diff>    Ink diffusion coefficient                (def. %.5f)\n"
-        "  -b           Toggles the n-body system: sources move\n"
-        "               under mutual gravitational attraction (def. on)\n"
         "  -p, -F       Fullscreen (exact size of the current screen)\n"
         "               (def. off)\n"
         "  -h           Shows this help and exits\n\n"
@@ -36,7 +33,7 @@ static void print_help(const char *program_name)
         SOURCES_MIN, SOURCES_MAX, SOURCES_DEFAULT,
         WINDOW_WIDTH_MIN, WINDOW_WIDTH_DEFAULT,
         WINDOW_HEIGHT_MIN, WINDOW_HEIGHT_DEFAULT,
-        DT_DEFAULT, VISC_DEFAULT, DIFF_DEFAULT);
+        VISC_DEFAULT, DIFF_DEFAULT);
 }
 
 /*
@@ -127,10 +124,8 @@ int parse_arguments(int argc, char *argv[], Config *config)
     config->window_width   = WINDOW_WIDTH_DEFAULT;
     config->window_height  = WINDOW_HEIGHT_DEFAULT;
     config->seed           = (unsigned int)time(NULL);
-    config->dt             = DT_DEFAULT;
     config->viscosity      = VISC_DEFAULT;
     config->diffusion      = DIFF_DEFAULT;
-    config->nbody          = 1;
     config->fullscreen     = 0;
 
     for (index = 1; index < argc; index++) {
@@ -139,11 +134,6 @@ int parse_arguments(int argc, char *argv[], Config *config)
         if (strcmp(option, "-h") == 0 || strcmp(option, "--help") == 0) {
             print_help(argv[0]);
             return -1;
-        }
-
-        if (strcmp(option, "-b") == 0 || strcmp(option, "--nbody") == 0) {
-            config->nbody = !config->nbody;
-            continue;
         }
 
         if (strcmp(option, "-p") == 0 || strcmp(option, "-F") == 0 ||
@@ -175,9 +165,6 @@ int parse_arguments(int argc, char *argv[], Config *config)
             if (!read_int(argv[++index], "-s", 0, INT_MAX,
                           &seed_read)) return 0;
             config->seed = (unsigned int)seed_read;
-        } else if (strcmp(option, "-t") == 0) {
-            if (!read_float(argv[++index], "-t", 0.001f, 1.0f,
-                            &config->dt)) return 0;
         } else if (strcmp(option, "-v") == 0) {
             if (!read_float(argv[++index], "-v", 0.0f, 1.0f,
                             &config->viscosity)) return 0;

@@ -110,9 +110,8 @@ int main(int argc, char *argv[])
            config.window_width, config.window_height,
            config.fullscreen ? " (fullscreen)" : "");
     printf("  Seed         : %u\n", config.seed);
-    printf("  dt / visc / diff : %.3f / %.5f / %.5f\n",
-           (double)config.dt, (double)config.viscosity, (double)config.diffusion);
-    printf("  N-body system: %s\n\n", config.nbody ? "on" : "off");
+    printf("  visc / diff  : %.5f / %.5f\n",
+           (double)config.viscosity, (double)config.diffusion);
 
     /* --- 3. Field memory ---------------------------------------------------*/
     if (!allocate_fields(&fields, config.grid_n)) {
@@ -215,23 +214,21 @@ int main(int argc, char *argv[])
         }
 
         /* 4.2 One simulation step */
-        if (config.nbody) {
-            update_nbody_sources(sources, config.num_sources, config.grid_n);
-        }
+        update_nbody_sources(sources, config.num_sources, config.grid_n);
         inject_sources(sources, config.num_sources, &fields,
                        (float)config.window_width / (float)config.window_height);
 
-        velocity_step(&fields, config.viscosity, config.dt);
+        velocity_step(&fields, config.viscosity, DT_DEFAULT);
 
         ink_step(&fields.ink_r, &fields.ink_r_p,
                 fields.vel_x, fields.vel_y,
-                config.diffusion, config.dt, fields.total_cells);
+                config.diffusion, DT_DEFAULT, fields.total_cells);
         ink_step(&fields.ink_g, &fields.ink_g_p,
                 fields.vel_x, fields.vel_y,
-                config.diffusion, config.dt, fields.total_cells);
+                config.diffusion, DT_DEFAULT, fields.total_cells);
         ink_step(&fields.ink_b, &fields.ink_b_p,
                 fields.vel_x, fields.vel_y,
-                config.diffusion, config.dt, fields.total_cells);
+                config.diffusion, DT_DEFAULT, fields.total_cells);
 
         dissipate_ink(&fields);
 

@@ -7,8 +7,8 @@ SDLFLAGS = $(shell pkg-config --cflags sdl2)
 SDLLIBS  = $(shell pkg-config --libs sdl2)
 LIBS     = $(SDLLIBS) -lm
 
-SRC      = $(shell find src -path 'src/legacy' -prune -o -type f -name '*.c' -print | sort)
-BIN      = Screensaver
+SRC      = $(shell find src -type f -name '*.c' | sort)
+BIN      = ss
 
 .PHONY: all clean run
 

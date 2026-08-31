@@ -23,7 +23,7 @@ parallelization plan, and benchmark results as they get filled in.
 PRY1-CPD/
 ├── Makefile
 ├── README.md
-├── Screensaver
+├── ss
 ├── docs/
 │   ├── Dev.md
 │   └── OPTIMIZATIONS.md
@@ -46,9 +46,7 @@ PRY1-CPD/
     ├── render.c
     ├── solver.c
     ├── sources.c
-    ├── utils.c
-    └── legacy/
-        └── Screensaver_seq.c
+    └── utils.c
 ```
 
 ### Organization convention
@@ -57,12 +55,7 @@ PRY1-CPD/
 - Each module lives directly under `src/`, one file per responsibility.
 - Shared, reusable headers live in `include/`.
 - Documentation lives in `docs/`.
-- The built binary lands at the repo root, per the Makefile.
-- `src/legacy/Screensaver_seq.c` is a single-file historical reference
-  version, excluded from the build (see the Makefile's `SRC` glob), kept
-  isolated so it doesn't interfere with the modular structure. It is not
-  translated to English — it's a frozen historical artifact, not active
-  code.
+- The built binary (`ss`) lands at the repo root, per the Makefile.
 
 ---
 
@@ -107,10 +100,8 @@ command-line arguments:
 - -W
 - -H
 - -s
-- -t
 - -v
 - -d
-- -b
 - -p / -F
 - -h
 
@@ -201,11 +192,6 @@ Renders the twinkling starfield behind the ink.
 Centralizes helper functions that belong to neither the physics core nor
 the visual layer.
 
-### src/legacy/Screensaver_seq.c
-A single-file version of the program kept for historical comparison.
-Isolated in the `legacy/` folder so it doesn't interfere with the current
-modular structure, and excluded from the build.
-
 ---
 
 ## 7. Parallel version workflow
@@ -232,7 +218,7 @@ From the project root:
 
 ```bash
 make
-./Screensaver -n 128 -f 6
+./ss -n 128 -f 6
 ```
 
 To clean:

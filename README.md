@@ -54,14 +54,14 @@ pkg-config --modversion sdl2
 make
 ```
 
-Produces the `Screensaver` executable. To clean: `make clean`.
+Produces the `ss` executable (short for "screensaver"). To clean: `make clean`.
 
 ---
 
 ## Usage
 
 ```bash
-./Screensaver [options]
+./ss [options]
 ```
 
 | Option | Description | Range | Default |
@@ -71,22 +71,20 @@ Produces the `Screensaver` executable. To clean: `make clean`.
 | `-W <width>` | Window width in pixels | ≥ 640 | 1920 |
 | `-H <height>` | Window height in pixels | ≥ 480 | 1080 |
 | `-s <seed>` | Pseudo-random seed (for reproducibility) | ≥ 0 | system clock |
-| `-t <dt>` | Simulation time step | 0.001–1.0 | 0.07 |
 | `-v <visc>` | Kinematic viscosity of the fluid | 0–1 | 0.0 |
 | `-d <diff>` | Ink diffusion coefficient | 0–1 | 0.0001 |
-| `-b` | Toggles the n-body system (sources move under mutual gravity) | — | on |
 | `-p`, `-F` | Fullscreen (exact size of the current screen) | — | off |
 | `-h` | Shows help | — | — |
 
 ### Examples
 
 ```bash
-./Screensaver                          # default configuration
-./Screensaver -n 192 -f 12             # more resolution and more sources
-./Screensaver -n 256 -f 8 -s 42        # reproducible with a fixed seed
-./Screensaver -n 128 -v 0.0001 -d 0.00001   # more viscous, more diffuse fluid
-./Screensaver -b -f 10                 # disable n-body motion, 10 sources
-./Screensaver -p                       # fullscreen at the current resolution
+./ss                          # default configuration
+./ss -n 192 -f 12             # more resolution and more sources
+./ss -n 256 -f 8 -s 42        # reproducible with a fixed seed
+./ss -n 128 -v 0.0001 -d 0.00001   # more viscous, more diffuse fluid
+./ss -f 10                     # 10 sources, moving under mutual gravity
+./ss -p                       # fullscreen at the current resolution
 ```
 
 ### Controls

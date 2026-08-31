@@ -17,10 +17,8 @@ typedef struct {
     int          window_height;
     int          fullscreen;      /* 1 = exact size of the current screen      */
     unsigned int seed;            /* PRNG seed                                 */
-    float        dt;
     float        viscosity;
     float        diffusion;
-    int          nbody;           /* 1 = sources move under mutual gravity     */
 } Config;
 
 /*
