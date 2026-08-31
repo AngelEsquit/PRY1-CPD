@@ -63,16 +63,11 @@ void renderizar_tinta(SDL_Texture *textura, const CamposFluido *campos,
 
     pixeles = (Uint32 *)pixeles_crudos;
 
-    /* Cada pixel se calcula de forma independiente (solo lee los campos de
-     * tinta, no los modifica). Nota: fy depende solo de j y no de i, asi que
-     * con collapse(2) se recalcula por cada (i,j) en vez de una vez por
-     * fila; es un recalculo barato (una resta y una multiplicacion) y a
-     * cambio incluso mallas muy angostas reparten trabajo entre todos los
-     * hilos. */
     for (j = 0; j < alto_textura; j++) {
+        Uint32 *fila = pixeles + (size_t)j * ((size_t)pitch_bytes / sizeof(Uint32));
+        fy = ((float)j + 0.5f) * escala_y - 0.5f;
+
         for (i = 0; i < ancho_textura; i++) {
-            Uint32 *fila = pixeles + (size_t)j * ((size_t)pitch_bytes / sizeof(Uint32));
-            fy = ((float)j + 0.5f) * escala_y - 0.5f;
             fx = ((float)i + 0.5f) * escala_x - 0.5f;
 
             /* Se aplica un mapeo tipo Reinhard (x / (x + k)) en lugar de un
