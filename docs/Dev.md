@@ -28,7 +28,7 @@ La regla general es:
 PRY1-CPD/
 ├── Makefile
 ├── README.md
-├── Screensaver_seq
+├── Screensaver
 ├── docs/
 │   └── Dev.md
 ├── include/
@@ -210,7 +210,7 @@ Desde la raiz del proyecto:
 
 ```bash
 make
-./Screensaver_seq -n 128 -f 6
+./Screensaver -n 128 -f 6
 ```
 
 Para limpiar:

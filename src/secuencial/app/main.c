@@ -39,7 +39,7 @@
  *   main.c               - programa principal (este archivo)
  *
  * Compilacion:  make            (ver Makefile)
- * Uso:          ./screensaver_seq -n 128 -f 6
+ * Uso:          ./Screensaver -n 128 -f 6
  * ===========================================================================
  */
 

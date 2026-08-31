@@ -52,14 +52,14 @@ pkg-config --modversion sdl2
 make
 ```
 
-Genera el ejecutable `screensaver_seq`. Para limpiar: `make clean`.
+Genera el ejecutable `Screensaver`. Para limpiar: `make clean`.
 
 ---
 
 ## Uso
 
 ```bash
-./screensaver_seq [opciones]
+./Screensaver [opciones]
 ```
 
 | Opción | Descripción | Rango | Defecto |
@@ -78,11 +78,11 @@ Genera el ejecutable `screensaver_seq`. Para limpiar: `make clean`.
 ### Ejemplos
 
 ```bash
-./screensaver_seq                          # configuración por defecto
-./screensaver_seq -n 192 -f 12             # más resolución y más fuentes
-./screensaver_seq -n 256 -f 8 -s 42        # reproducible con semilla fija
-./screensaver_seq -n 128 -v 0.0001 -d 0.00001   # fluido más viscoso y difuso
-./screensaver_seq -b -f 10                 # fuentes en movimiento (n-cuerpos)
+./Screensaver                          # configuración por defecto
+./Screensaver -n 192 -f 12             # más resolución y más fuentes
+./Screensaver -n 256 -f 8 -s 42        # reproducible con semilla fija
+./Screensaver -n 128 -v 0.0001 -d 0.00001   # fluido más viscoso y difuso
+./Screensaver -b -f 10                 # fuentes en movimiento (n-cuerpos)
 ```
 
 ### Controles

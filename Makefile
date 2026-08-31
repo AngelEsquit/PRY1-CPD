@@ -8,7 +8,7 @@ SDLLIBS  = $(shell pkg-config --libs sdl2)
 LIBS     = $(SDLLIBS) -lm
 
 SEQ_SRC  = $(shell find src/secuencial -path 'src/secuencial/legacy' -prune -o -type f -name '*.c' -print | sort)
-SEQ_BIN  = Screensaver_seq
+SEQ_BIN  = Screensaver
 
 .PHONY: all clean run
 
