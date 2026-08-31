@@ -177,122 +177,140 @@ celda.
 
 ---
 
-## Optimizaciones pendientes / ideas para ramas incrementales
+## La estrategia: un paso a la vez, misma bateria de pruebas cada vez
 
-Para ir documentando "de X a Y, speedup Z%" por rama, algunas ideas de pasos
-intermedios entre `sequential` y `parallel-omp` completo (crear una rama por
-cada uno, medir, anotar en la bitacora):
+El plan real es: cada optimizacion (algoritmica o de paralelizacion) va en
+su propia rama, arrancando siempre desde la ultima rama "buena" (no desde
+`sequential` cada vez, sino acumulando). Despues de CADA paso se corre
+exactamente la misma bateria de benchmarks (misma metodologia, mismos
+valores de `-n`/`-f`/hilos), y se le agrega una columna a la tabla maestra
+de resultados. Asi cada numero es comparable con el anterior y se puede
+hablar de "de X a Y, +Z% FPS" paso por paso, no solo secuencial-vs-paralelo-
+al-final.
 
-- [ ] **v1**: solo paralelizar los loops "vergonzosamente paralelos" (1, 2,
-      4, 5, 6 de la lista de arriba), dejar el solver de Gauss-Seidel
-      secuencial (bottleneck real, pero mide cuanto dan los loops faciles
-      solos).
-- [ ] **v2**: agregar red-black + paralelizacion del solver (el cambio que
-      mas deberia importar, dado que es el hotspot).
-- [ ] **v3**: variar `schedule()` — probar `static` vs `dynamic` vs
-      `guided`, y distintos tamanos de chunk (4, 16, 64), medir cual da
-      mejor FPS a cada resolucion.
-- [ ] **v4**: probar sin `collapse(2)` (paralelizar solo el loop externo
-      `j`) contra con `collapse(2)`, especialmente relevante en mallas
-      chicas (`-n 16` a `-n 64`, menos filas que `nproc`).
-- [ ] **v5** (opcional, mas alla de OpenMP for-loops): SIMD explicito
-      (`#pragma omp simd`) en los loops internos del solver, o revisar si
-      el compilador ya autovectoriza con `-O2`/`-O3` (comparar `-O2` vs
-      `-O3` como variable de build, no solo de runtime).
+El eje que mas importa variar en cada bateria es **`-n`** (tamano de
+celda/resolucion de la malla) porque domina el costo (`O(N^2)` por
+iteracion, y son `ITER_GAUSS_SEIDEL` iteraciones por paso, varias veces por
+frame). El eje secundario es **`-f`** (cantidad de fuentes/cuerpos), que solo
+pesa cuando el n-body esta activo (`O(F^2)` sin arbol, `O(F log F)` con
+arbol). Los demas flags (viscosidad, difusion, ventana, etc.) no cambian el
+costo computacional, solo el aspecto visual — no hace falta variarlos en el
+benchmark de rendimiento.
+
+### Roadmap de pasos (branches)
+
+Ir tachando y anotando la rama real que se creo para cada uno a medida que
+se implementan (no estan implementados todavia, es la lista de que sigue):
+
+- [x] **Paso 0 — `sequential`**: baseline. 1 hilo, n-body O(F^2) con fuerza
+      bruta, solver Gauss-Seidel fila por fila. *(este es el punto de
+      partida, ya tiene su propia fila en la tabla maestra)*
+- [ ] **Paso 1 — arbol para n-body (Barnes-Hut)**: reemplazar el loop
+      O(F^2) de `actualizar_fuentes_nbody()` (`ncuerpos.c`) por un quadtree
+      con aproximacion por centro de masa, O(F log F). Sigue siendo
+      secuencial (sin OpenMP todavia) — el punto es medir cuanto gana el
+      *algoritmo* solo, antes de meterle hilos. Para que el efecto se note
+      hace falta variar `-f` alto (64, 128, 256) ademas de `-n`.
+- [ ] **Paso 2 — paralelizar los loops "faciles"**: los sitios 1, 2, 4, 5, 6
+      del catalogo de arriba (fuente/disipacion/adveccion/proyeccion/
+      render) — todos son `#pragma omp parallel for` directo, sin cambiar
+      el algoritmo. El solver de presion/difusion se queda secuencial
+      todavia (sigue siendo Gauss-Seidel fila por fila).
+- [ ] **Paso 3 — red-black + paralelizar el solver**: el cambio algoritmico
+      del catalogo (seccion 3 de arriba) — se espera que sea el salto mas
+      grande, es el hotspot principal.
+- [ ] **Paso 4 — tuning de `schedule()`**: probar `static`/`dynamic`/
+      `guided` y distintos tamanos de chunk sobre el resultado del paso 3,
+      variando `-n` (mallas chicas vs. grandes reaccionan distinto al
+      overhead de reparto de trabajo).
+- [ ] **Paso 5 — `collapse(2)` si/no**: comparar contra paralelizar solo el
+      loop externo, especialmente relevante en `-n` chico (menos filas que
+      `nproc`).
+- [ ] **Paso 6 (opcional)** — SIMD / autovectorizacion, `-O2` vs `-O3` como
+      variable de build.
+
+`parallel-omp` (la rama congelada) ya tiene implementados los pasos 2 y 3
+juntos (mas los cambios visuales de resolucion/fondo/render que no son
+parte de este roadmap de performance) — sirve como referencia de "a donde
+se puede llegar", pero el roadmap de arriba se construye de nuevo, paso por
+paso, desde `sequential`, para poder medir cada incremento por separado.
 
 ---
 
-## Plan de experimentacion / benchmarking
+## Metodologia de benchmark (igual para cada paso)
 
-### Metodologia
-
-1. **Metrica**: el programa ya imprime FPS por stdout cada ~0.5s
-   (`printf("FPS= %.2f\n", ...)`). Para un numero estable, correr cada
-   configuracion un tiempo fijo (p.ej. 30s) y promediar las lineas de FPS
-   ignorando las primeras ~5 (warm-up / primeros frames con cache fria).
-2. **Reproducibilidad**: fijar siempre la semilla (`-s 42`) para que todas
-   las corridas simulen exactamente las mismas fuentes/trayectorias.
-3. **Automatizar la corrida** (ejemplo, ajustar a lo que se necesite):
+1. **Metrica**: el programa imprime FPS por stdout cada ~0.5s
+   (`printf("FPS= %.2f\n", ...)`). Correr cada configuracion un tiempo fijo
+   (p.ej. 30s) y promediar, ignorando las primeras ~5 lineas (warm-up /
+   cache fria).
+2. **Reproducibilidad**: fijar siempre la semilla (`-s 42`).
+3. **Comando base** (ajustar `-n`/`-f`/flags segun la fila de la tabla):
    ```bash
-   timeout 30s ./Screensaver -n 256 -f 6 -s 42 2>/dev/null \
+   timeout 30s ./Screensaver -n <N> -f <F> -s 42 2>/dev/null \
      | grep "FPS=" | tail -n +6 \
      | awk -F'= ' '{s+=$2; c++} END {printf "FPS promedio: %.2f\n", s/c}'
    ```
-   (En una maquina sin display, correr con `xvfb-run` o similar si hace
-   falta un X server virtual.)
-4. **Hilos OpenMP**: controlar la cantidad de hilos con la variable de
-   entorno `OMP_NUM_THREADS`, sin recompilar:
+   (Sin display disponible: envolver con `xvfb-run`.)
+4. **Hilos OpenMP** (solo aplica desde el Paso 2 en adelante): controlar sin
+   recompilar con `OMP_NUM_THREADS`:
    ```bash
    OMP_NUM_THREADS=4 ./Screensaver -n 256 -f 6 -s 42
    ```
-   Nucleos disponibles en esta maquina: `nproc` → **20**.
-5. **Speedup**: `speedup = FPS_paralelo / FPS_secuencial` (a igualdad de
-   parametros de simulacion). **Eficiencia**: `speedup / num_hilos`.
+   Nucleos disponibles en esta maquina: `nproc` → **20**. Para los pasos que
+   todavia no tienen OpenMP, correr con 1 hilo nada mas (no aplica variar).
+5. **Speedup** siempre respecto al paso anterior en la tabla maestra:
+   `speedup_paso_N = FPS_paso_N / FPS_paso_(N-1)` (mismos `-n`/`-f`/flags).
+   **Speedup acumulado** = `FPS_paso_N / FPS_paso_0` (contra `sequential`).
 
-### Tabla 1 — Speedup vs. resolucion de malla (`-n`)
+### Matriz estandar a correr en cada paso
 
-Parametros fijos: `-f 6 -s 42`, sin `-b`. Correr `sequential` una vez
-(no depende de hilos) y `parallel-omp` con `OMP_NUM_THREADS` = numero de
-nucleos.
+Repetir esta misma matriz completa despues de cada paso del roadmap y pegar
+los resultados en la tabla maestra de abajo (agregar mas filas de matriz
+si algun paso lo amerita, p.ej. mas hilos una vez que haya OpenMP):
 
-| `-n` | FPS `sequential` | FPS `parallel-omp` | Speedup | Notas |
-|------|-------------------|----------------------|---------|-------|
-| 32   |                   |                      |         |       |
-| 64   |                   |                      |         |       |
-| 128  |                   |                      |         |       |
-| 256  |                   |                      |         |       |
-| 512  |                   |                      |         |       |
-| 1024 |                   |                      |         |       |
+| # | `-n` | `-f` | `-b` | Hilos | Por que esta en la matriz |
+|---|------|------|------|-------|------------------------------|
+| A | 64   | 6    | on   | 1     | malla chica, referencia rapida |
+| B | 256  | 6    | on   | 1     | default del programa |
+| C | 512  | 6    | on   | 1     | malla grande, domina el solver |
+| D | 1024 | 6    | on   | 1     | malla muy grande, limite superior |
+| E | 256  | 4    | on   | 1     | pocos cuerpos |
+| F | 256  | 64   | on   | 1     | muchos cuerpos, resalta el costo O(F^2)/O(F log F) del n-body |
+| G | 256  | 256  | on   | 1     | limite superior de cuerpos |
 
-*Hipotesis a confirmar*: el speedup deberia crecer con `-n` — mallas chicas
-no tienen suficiente trabajo para amortizar el overhead de sincronizacion
-de OpenMP (barreras, creacion del team de hilos), mallas grandes si.
+A partir del Paso 2 (cuando ya hay OpenMP), repetir tambien B con
+`OMP_NUM_THREADS` en `{1, 2, 4, 8, 16, 20}` para tener la curva de
+escalabilidad de ese paso.
 
-### Tabla 2 — Speedup vs. numero de hilos (`OMP_NUM_THREADS`)
+---
 
-Parametros fijos: `-n 512 -f 6 -s 42` (una malla grande, para que el
-resultado no este dominado por overhead de sincronizacion).
+## Tabla maestra de resultados
 
-| Hilos | FPS | Speedup vs. 1 hilo | Eficiencia (speedup/hilos) |
-|-------|-----|---------------------|------------------------------|
-| 1     |     |                     |                              |
-| 2     |     |                     |                              |
-| 4     |     |                     |                              |
-| 8     |     |                     |                              |
-| 16    |     |                     |                              |
-| 20    |     |                     |                              |
+FPS promedio por combinacion de fila-de-matriz x paso. Ir agregando una
+columna por cada paso conforme se implementa y se corre la bateria.
 
-*Hipotesis a confirmar*: la eficiencia deberia caer al acercarse al numero
-de nucleos fisicos (ley de Amdahl — la parte secuencial del programa, como
-la inicializacion por frame y el `single` de la frontera, pone un techo).
+| Fila matriz | Paso 0 `sequential` | Paso 1 (arbol n-body) | Paso 2 (omp loops faciles) | Paso 3 (+ solver red-black) | ... |
+|---|---|---|---|---|---|
+| A (n=64, f=6) | | | | | |
+| B (n=256, f=6) | | | | | |
+| C (n=512, f=6) | | | | | |
+| D (n=1024, f=6) | | | | | |
+| E (n=256, f=4) | | | | | |
+| F (n=256, f=64) | | | | | |
+| G (n=256, f=256) | | | | | |
 
-### Tabla 3 — Speedup vs. cantidad de fuentes (`-f`)
+### Curva de escalabilidad por hilos (desde el Paso 2 en adelante)
 
-Parametros fijos: `-n 256 -s 42`, con y sin `-b` (n-cuerpos, O(F^2)).
+Usar la fila B (n=256, f=6) como referencia, variando `OMP_NUM_THREADS`:
 
-| `-f` | FPS `sequential` (sin `-b`) | FPS `parallel-omp` (sin `-b`) | FPS `sequential` (con `-b`) | FPS `parallel-omp` (con `-b`) |
-|------|-------------------------------|----------------------------------|--------------------------------|-----------------------------------|
-| 4    |                               |                                   |                                 |                                    |
-| 16   |                               |                                   |                                 |                                    |
-| 64   |                               |                                   |                                 |                                    |
-| 256  |                               |                                   |                                 |                                    |
-
-*Nota*: `actualizar_fuentes_nbody()` (el sistema de n-cuerpos) **no esta
-paralelizado** en ninguna rama actual — es O(F^2) pero solo importa con `-f`
-alto. Buen candidato a rama incremental si se quiere otro punto de datos
-("optimizacion 7").
-
-### Tabla 4 — Bitacora de optimizaciones incrementales
-
-Ir agregando una fila por cada rama nueva creada a partir del checklist de
-"Optimizaciones pendientes":
-
-| Rama | Que cambia respecto a la anterior | FPS (n=256,f=6, N hilos) | Speedup acumulado | Speedup incremental |
-|------|-------------------------------------|-----------------------------|----------------------|-------------------------|
-| `sequential` | baseline | | 1.00x | — |
-| `parallel-omp` (v1: solo loops triviales) | | | | |
-| `parallel-omp` (v2: + solver red-black) | | | | |
-| ... | | | | |
+| Hilos | FPS Paso 2 | FPS Paso 3 | ... |
+|-------|------------|------------|-----|
+| 1     |            |            |     |
+| 2     |            |            |     |
+| 4     |            |            |     |
+| 8     |            |            |     |
+| 16    |            |            |     |
+| 20    |            |            |     |
 
 ---
 
