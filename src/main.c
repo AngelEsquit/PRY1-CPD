@@ -1,47 +1,11 @@
-/* ===========================================================================
- * main.c
- * ---------------------------------------------------------------------------
- * Fluid screensaver based on the Navier-Stokes equations for incompressible
- * fluids, solved with Jos Stam's "Stable Fluids" method.
- *
- * SEQUENTIAL VERSION (comparison baseline for the OpenMP parallel version).
- *
- * Physical model
- * --------------
- * The two coupled equations are solved over a regular 2D grid:
- *
- *   Velocity:  du/dt = -(u . grad)u + visc * lap(u) + f      with div(u) = 0
- *   Ink:       dp/dt = -(u . grad)p + diff * lap(p) + s
- *
- * Each time step is broken down into four operators (Stam, 1999):
- *   1. add_source  -> applies the external forces f and the ink sources s
- *   2. diffuse     -> solves viscous diffusion implicitly
- *   3. advect      -> transports the field via semi-Lagrangian tracing
- *   4. project     -> Hodge projection: removes divergence (incompressible)
- *
- * Steps 2 and 4 require solving a sparse linear system; here iterative
- * Gauss-Seidel relaxation is used (see the note in solver.c on its impact
- * on the parallel version).
- *
- * Trigonometry: each ink source injects velocity in a direction that
- * rotates over time, computed with sin() and cos() over its own phase
- * (see sources.c).
- *
- * Project modules (see include/ and src/):
- *   common.h        - constants, macros and grid indexing
- *   utils.{h,c}     - general-purpose functions
- *   config.{h,c}    - command-line arguments
- *   fields.{h,c}    - simulation field memory
- *   sources.{h,c}   - ink sources
- *   nbody.{h,c}     - source movement (n-body system)
- *   solver.{h,c}    - numerical core (Stable Fluids)
- *   render.{h,c}    - dump to an SDL texture
- *   main.c          - main program (this file)
- *
- * Build:  make            (see Makefile)
- * Usage:  ./Screensaver -n 128 -f 6
- * ===========================================================================
- */
+// Fluid screensaver, sequential version (comparison baseline for the
+// OpenMP parallel version). Solves incompressible Navier-Stokes with Jos
+// Stam's "Stable Fluids" method: see solver.c for the actual math.
+//
+// Per-frame flow: move sources (n-body), inject ink/force, solve velocity,
+// advect each ink channel through it, fade the ink a little, render.
+//
+// Build: make (see Makefile). Usage: ./ss -n 128 -f 6
 
 #include <SDL2/SDL.h>
 #include <stdio.h>
@@ -56,9 +20,8 @@
 #include "solver.h"
 #include "sources.h"
 
-/* Grid resolution; global so the IX() macro stays readable. The project's
- * only definition (declared extern in common.h so every other module can
- * use it). */
+// Grid resolution, global so the IX() macro stays readable. Declared
+// extern in common.h so every other module can use it.
 int grid_n = GRID_DEFAULT;
 
 int main(int argc, char *argv[]) {
@@ -79,17 +42,17 @@ int main(int argc, char *argv[]) {
   double elapsed_seconds, current_fps = 0.0;
   char window_title[128];
 
-  // Args
+  // Parse command-line arguments.
   int args_result = parse_arguments(argc, argv, &config);
   if (args_result == -1)
-    return EXIT_SUCCESS; /* help was requested       */
+    return EXIT_SUCCESS; // Help was requested.
   if (args_result == 0)
-    return EXIT_FAILURE; /* invalid arguments        */
+    return EXIT_FAILURE; // Invalid arguments.
 
-  grid_n = config.grid_n; /* sets the resolution used by the IX() macro  */
+  grid_n = config.grid_n; // Sets the resolution used by the IX() macro.
   srand(config.seed);
 
-  // SDL init / screen detection
+  // Initialize SDL and detect the screen (for fullscreen).
   if (SDL_Init(SDL_INIT_VIDEO) != 0) {
     fprintf(stderr, "Error: could not initialize SDL: %s\n", SDL_GetError());
     return EXIT_FAILURE;
@@ -114,13 +77,13 @@ int main(int argc, char *argv[]) {
   printf("  visc / diff  : %.5f / %.5f\n", (double)config.viscosity,
          (double)config.diffusion);
 
-  // Allocate field memory
+  // Allocate the simulation field memory.
   if (!allocate_fields(&fields, config.grid_n)) {
     SDL_Quit();
     return EXIT_FAILURE;
   }
 
-  // Init ink sources
+  // Allocate and initialize the ink sources.
   sources = (InkSource *)malloc((size_t)config.num_sources * sizeof(InkSource));
   if (sources == NULL) {
     fprintf(stderr, "Error: could not allocate memory for the sources.\n");
@@ -130,7 +93,7 @@ int main(int argc, char *argv[]) {
   }
   init_sources(sources, config.num_sources, config.grid_n);
 
-  // Init stars / bg
+  // Allocate and initialize the background stars.
   stars = (Star *)malloc((size_t)BACKGROUND_STARS_COUNT * sizeof(Star));
   if (stars == NULL) {
     fprintf(stderr, "Error: could not allocate memory for the background.\n");
@@ -142,7 +105,7 @@ int main(int argc, char *argv[]) {
   init_background(stars, BACKGROUND_STARS_COUNT, config.window_width,
                   config.window_height);
 
-  // Window rendering / creation
+  // Create the window and renderer.
   SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");
 
   window =
@@ -155,8 +118,9 @@ int main(int argc, char *argv[]) {
     goto cleanup;
   }
 
-  /* Fullscreen is requested on the window after creation, not via a
-   * flag to SDL_CreateWindow due to issues w/ tiling WM's. */
+  // Fullscreen is requested on the window after creation, not via a flag
+  // to SDL_CreateWindow, because tiling window managers can drop a
+  // fullscreen request made before the window is actually mapped.
   if (config.fullscreen) {
     if (SDL_SetWindowFullscreen(window, SDL_WINDOW_FULLSCREEN_DESKTOP) != 0) {
       fprintf(stderr, "Warning: could not enter fullscreen: %s\n",
@@ -165,12 +129,12 @@ int main(int argc, char *argv[]) {
     SDL_ShowCursor(SDL_DISABLE);
   }
 
-  /* Gets the actual size SDL assigned (post-fullscreen, if requested) */
+  // Gets the actual size SDL assigned (post-fullscreen, if requested).
   SDL_GetWindowSize(window, &config.window_width, &config.window_height);
 
   renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
   if (renderer == NULL) {
-    /* Retry with software rendering if acceleration isn't available */
+    // Retry with software rendering if acceleration isn't available.
     fprintf(stderr,
             "Notice: no accelerated renderer (%s). "
             "Trying software.\n",
@@ -193,20 +157,18 @@ int main(int argc, char *argv[]) {
     exit_code = EXIT_FAILURE;
     goto cleanup;
   }
-  /* The ink texture now carries alpha proportional to brightness (see
-   * render.c); without this SDL_RenderCopy would treat it as opaque and
-   * fully cover the background (stars) regardless of pixel alpha. */
+  // The ink texture carries alpha proportional to brightness (see
+  // render.c). Without this, SDL_RenderCopy would treat it as opaque and
+  // fully cover the background regardless of pixel alpha.
   SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
 
-  // Main loop
-
-  // Performance  measurements
+  // Main loop. Performance measurement setup first.
   clock_frequency = SDL_GetPerformanceFrequency();
   prev_ticks = SDL_GetPerformanceCounter();
   last_report_ticks = prev_ticks;
 
   while (running) {
-    // Window / kb events
+    // Window and keyboard events.
     while (SDL_PollEvent(&event)) {
       if (event.type == SDL_QUIT) {
         running = 0;
@@ -221,19 +183,17 @@ int main(int argc, char *argv[]) {
       }
     }
 
-    // Simulation per step:
-
-    // Move the n bodies / source emitters
+    // One simulation step. Move the sources first.
     update_nbody_sources(sources, config.num_sources, config.grid_n);
 
-    // Inject ink from the sources
+    // Inject ink and force from the sources.
     inject_sources(sources, config.num_sources, &fields,
                    (float)config.window_width / (float)config.window_height);
 
-    // Update velocity field (stable fluids)
+    // Solve the velocity field for this frame.
     velocity_step(&fields, config.viscosity, DT_DEFAULT);
 
-    // Update each rgb channel's scalar field
+    // Advect each ink color channel through that velocity.
     ink_step(&fields.ink_r, &fields.ink_r_p, fields.vel_x, fields.vel_y,
              config.diffusion, DT_DEFAULT, fields.total_cells);
     ink_step(&fields.ink_g, &fields.ink_g_p, fields.vel_x, fields.vel_y,
@@ -241,13 +201,13 @@ int main(int argc, char *argv[]) {
     ink_step(&fields.ink_b, &fields.ink_b_p, fields.vel_x, fields.vel_y,
              config.diffusion, DT_DEFAULT, fields.total_cells);
 
-    // Dissipate rgb channels (avoid saturating screen w/ ink)
+    // Fade the ink so it doesn't saturate the screen.
     dissipate_ink(&fields);
 
-    // Update stars in bg
+    // Advance the background stars' twinkle.
     update_background(stars, BACKGROUND_STARS_COUNT);
 
-    // Draw / render
+    // Render this frame.
     render_ink(texture, &fields, config.window_width, config.window_height);
 
     SDL_SetRenderDrawColor(renderer, BACKGROUND_COLOR_R, BACKGROUND_COLOR_G,
@@ -257,7 +217,7 @@ int main(int argc, char *argv[]) {
     SDL_RenderCopy(renderer, texture, NULL, NULL);
     SDL_RenderPresent(renderer);
 
-    // FPS measurement (0.5s timeframe avg)
+    // Measure FPS, averaged over roughly half-second windows.
     accumulated_frames++;
     current_ticks = SDL_GetPerformanceCounter();
     elapsed_seconds =
@@ -280,9 +240,9 @@ int main(int argc, char *argv[]) {
     prev_ticks = current_ticks;
   }
 
-  (void)prev_ticks; // make compiler happy :)
+  (void)prev_ticks; // Unused, kept for clarity. Silences the compiler.
 
-// Resource release
+// Release resources.
 cleanup:
   if (texture != NULL)
     SDL_DestroyTexture(texture);

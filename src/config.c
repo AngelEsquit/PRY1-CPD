@@ -8,7 +8,7 @@
 #include <limits.h>
 #include <time.h>
 
-/* Prints the program's usage screen. */
+// Prints the program's usage screen.
 static void print_help(const char *program_name)
 {
     printf(
@@ -36,12 +36,8 @@ static void print_help(const char *program_name)
         VISC_DEFAULT, DIFF_DEFAULT);
 }
 
-/*
- * Converts a string to an int, validating that it's a complete numeric
- * value and that it falls within [min, max].
- * Returns 1 if the conversion succeeded, 0 on error (and prints the reason
- * to stderr).
- */
+// Converts a string to an int, checking it's a full numeric value inside
+// [min, max]. Returns 1 on success, 0 on error (prints the reason to stderr).
 static int read_int(const char *text, const char *option_name,
                     int min, int max, int *out)
 {
@@ -75,10 +71,8 @@ static int read_int(const char *text, const char *option_name,
     return 1;
 }
 
-/*
- * Converts a string to a float, validating format and range.
- * Returns 1 if the conversion succeeded, 0 on error.
- */
+// Converts a string to a float, checking format and range.
+// Returns 1 on success, 0 on error.
 static int read_float(const char *text, const char *option_name,
                       float min, float max, float *out)
 {
@@ -108,17 +102,14 @@ static int read_float(const char *text, const char *option_name,
     return 1;
 }
 
-/*
- * Walks argv and fills in the config struct.
- * Returns  1 if everything is correct,
- *          0 if there was an argument error,
- *         -1 if the user asked for help (-h): the program should exit cleanly.
- */
+// Walks argv and fills in the config struct.
+// Returns 1 if everything is correct, 0 on an argument error, -1 if the
+// user asked for help (-h), in which case the program should exit cleanly.
 int parse_arguments(int argc, char *argv[], Config *config)
 {
     int index;
 
-    /* Default values */
+    // Default values.
     config->grid_n         = GRID_DEFAULT;
     config->num_sources    = SOURCES_DEFAULT;
     config->window_width   = WINDOW_WIDTH_DEFAULT;
@@ -142,7 +133,7 @@ int parse_arguments(int argc, char *argv[], Config *config)
             continue;
         }
 
-        /* Every other option requires an associated value */
+        // Every other option requires an associated value.
         if (index + 1 >= argc) {
             fprintf(stderr, "Error: missing value for option '%s'.\n", option);
             return 0;

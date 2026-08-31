@@ -6,16 +6,13 @@
 #include <stddef.h>
 #include <stdio.h>
 
-/* Exponent of alpha's gamma curve (see render_ink): the smaller it is, the
- * faster alpha reaches opaque with little ink brightness. */
+// Exponent of alpha's gamma curve, see render_ink(). Smaller means alpha
+// reaches opaque faster even at low ink brightness.
 #define ALPHA_GAMMA 0.7f
 
-/*
- * Bilinearly interpolates "field" (an N x N grid with a ghost ring) at the
- * continuous position (fx, fy), expressed in the same space as a pixel
- * index of the original N x N texture: fx=0 is the center of interior cell
- * 1, fx=grid_n-1 is the center of interior cell grid_n.
- */
+// Bilinearly interpolates "field" at continuous position (fx, fy), in the
+// same coordinate space as a pixel index of the N x N texture. fx=0 is
+// interior cell 1's center, fx=grid_n-1 is interior cell grid_n's center.
 static float sample_bilinear(const float *field, float fx, float fy)
 {
     int i0, i1, j0, j1;
@@ -30,19 +27,17 @@ static float sample_bilinear(const float *field, float fx, float fy)
     weight_x1 = fx - (float)i0;  weight_x0 = 1.0f - weight_x1;
     weight_y1 = fy - (float)j0;  weight_y0 = 1.0f - weight_y1;
 
-    /* +1 shifts from pixel space (0..N-1) to the interior cell index
-     * (1..N) inside the grid with its ghost ring. */
+    // +1 shifts from pixel space (0..N-1) to the interior cell index
+    // (1..N) inside the grid with its ghost ring.
     return weight_x0 * (weight_y0 * field[IX(i0 + 1, j0 + 1)] +
                         weight_y1 * field[IX(i0 + 1, j1 + 1)]) +
            weight_x1 * (weight_y0 * field[IX(i1 + 1, j0 + 1)] +
                         weight_y1 * field[IX(i1 + 1, j1 + 1)]);
 }
 
-/*
- * Dumps the ink density into the SDL texture, one texture pixel per
- * destination pixel (see render.h for why: SDL2's software renderer
- * doesn't do linear scaling).
- */
+// Dumps ink density into the SDL texture, one texture pixel at a time.
+// Doesn't rely on SDL's own scaling since the software renderer ignores
+// the linear-filtering hint (see render.h).
 void render_ink(SDL_Texture *texture, const FluidFields *fields,
                 int texture_width, int texture_height)
 {
@@ -70,9 +65,9 @@ void render_ink(SDL_Texture *texture, const FluidFields *fields,
         for (i = 0; i < texture_width; i++) {
             fx = ((float)i + 0.5f) * scale_x - 0.5f;
 
-            /* A Reinhard-style mapping (x / (x + k)) is applied instead of
-             * a hard clip, so the buildup of many sources compresses
-             * smoothly toward white instead of clipping abruptly. */
+            // Reinhard-style tone mapping (x / (x + k)) instead of a hard
+            // clip, so overlapping sources compress toward white smoothly
+            // instead of clipping abruptly.
             value_r = sample_bilinear(fields->ink_r, fx, fy) * BRIGHTNESS_FACTOR;
             value_g = sample_bilinear(fields->ink_g, fx, fy) * BRIGHTNESS_FACTOR;
             value_b = sample_bilinear(fields->ink_b, fx, fy) * BRIGHTNESS_FACTOR;
@@ -81,22 +76,18 @@ void render_ink(SDL_Texture *texture, const FluidFields *fields,
             value_g = value_g / (value_g + CONTRAST_FACTOR);
             value_b = value_b / (value_b + CONTRAST_FACTOR);
 
-            /* Pushes each channel away from the pixel's average gray to
-             * recover saturation without changing the mean brightness,
-             * keeping the result from looking washed-out/white. */
+            // Push each channel away from this pixel's average gray to
+            // recover saturation without changing overall brightness.
+            // Keeps the result from looking washed out.
             average = (value_r + value_g + value_b) / 3.0f;
             value_r = clamp(average + (value_r - average) * SATURATION_FACTOR, 0.0f, 1.0f);
             value_g = clamp(average + (value_g - average) * SATURATION_FACTOR, 0.0f, 1.0f);
             value_b = clamp(average + (value_b - average) * SATURATION_FACTOR, 0.0f, 1.0f);
 
-            /* Alpha proportional to the ink's brightness (instead of a
-             * fixed 0xFF): where there's no ink the pixel is transparent
-             * and the background (stars/vignette) drawn earlier on the
-             * renderer shows through; where the ink saturates, the pixel
-             * is opaque and covers it completely. The highest of the three
-             * channels is used as a brightness approximation (keeps a
-             * color heavily saturated in a single channel, with a low
-             * average, from looking more transparent than it should). */
+            // Alpha tracks ink brightness instead of a fixed 0xFF, so the
+            // background shows through where there's no ink. Uses the
+            // brightest of the 3 channels so a color saturated in only one
+            // channel doesn't read as more transparent than it should.
             {
                 float max_brightness, alpha;
 
@@ -104,16 +95,10 @@ void render_ink(SDL_Texture *texture, const FluidFields *fields,
                 if (value_g > max_brightness) max_brightness = value_g;
                 if (value_b > max_brightness) max_brightness = value_b;
 
-                /* Using max_brightness directly as alpha leaves most of
-                 * the blob (anything not already saturated to full
-                 * brightness) semi-transparent, and SDL_BLENDMODE_BLEND
-                 * mixes it with the dark background behind it: the result
-                 * looks washed out, as if the ink's color lost intensity.
-                 * A gamma curve (<1) pushes alpha to opaque much faster
-                 * than the real brightness, so the blob looks as vivid as
-                 * it did before the background was added, and only the
-                 * edge where the ink drops to nearly zero stays
-                 * transparent (so the stars show through there). */
+                // A gamma curve below 1 pushes alpha to opaque faster than
+                // brightness itself rises, so the blob stays vivid instead
+                // of looking washed out where it blends with the dark
+                // background, and only the very edge stays transparent.
                 alpha = powf(max_brightness, ALPHA_GAMMA);
 
                 row[i] = ((Uint32)(alpha * 255.0f) << 24) |

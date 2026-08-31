@@ -10,25 +10,25 @@
 
 // Fills the ghost border so the real math never special-cases edge cells.
 // BND_SCALAR: border copies its neighbor. BND_VEL_X/Y: copies but flips
-// sign on the walls that axis is perpendicular to -- that's what makes
+// sign on the walls that axis is perpendicular to. That is what makes
 // velocity bounce off walls instead of leaking through.
 static void apply_boundary(int bnd_type, float *field) {
   int i;
 
   for (i = 1; i <= grid_n; i++) {
-    // left/right walls: flip for BND_VEL_X, else copy
+    // Left/right walls: flip for BND_VEL_X, else copy.
     field[IX(0, i)] =
         (bnd_type == BND_VEL_X) ? -field[IX(1, i)] : field[IX(1, i)];
     field[IX(grid_n + 1, i)] =
         (bnd_type == BND_VEL_X) ? -field[IX(grid_n, i)] : field[IX(grid_n, i)];
-    // top/bottom walls: flip for BND_VEL_Y, else copy
+    // Top/bottom walls: flip for BND_VEL_Y, else copy.
     field[IX(i, 0)] =
         (bnd_type == BND_VEL_Y) ? -field[IX(i, 1)] : field[IX(i, 1)];
     field[IX(i, grid_n + 1)] =
         (bnd_type == BND_VEL_Y) ? -field[IX(i, grid_n)] : field[IX(i, grid_n)];
   }
 
-  // corners aren't covered by the loop above, average their 2 neighbors
+  // Corners aren't covered by the loop above, average their 2 neighbors.
   field[IX(0, 0)] = 0.5f * (field[IX(1, 0)] + field[IX(0, 1)]);
   field[IX(0, grid_n + 1)] =
       0.5f * (field[IX(1, grid_n + 1)] + field[IX(0, grid_n)]);
@@ -44,16 +44,16 @@ static void add_source(float *dest, const float *source, float dt,
                        int total_cells) {
   int i;
   for (i = 0; i < total_cells; i++) {
-    dest[i] += dt * source[i]; // just add it in, cell by cell
+    dest[i] += dt * source[i]; // Just add it in, cell by cell.
   }
 }
 
 // Iteratively solves  new_value = (starting_value + a * sum_of_4_neighbors) / c
 // for every cell. Used for both diffusion (smoothing) and the pressure
-// solve inside project() -- same "every cell depends on its neighbors"
+// solve inside project(). Same "every cell depends on its neighbors"
 // trick, different a/c.
 //
-// NOT PARALLEL-SAFE: writes each cell's result back into `field` and
+// Not parallel-safe: writes each cell's result back into `field` and
 // immediately reads that fresh value for the next cell, so cell (i+1,j)
 // depends on (i,j) having already been computed this pass.
 static void solve_linear(int bnd_type, float *field, const float *field_prev,
@@ -61,18 +61,18 @@ static void solve_linear(int bnd_type, float *field, const float *field_prev,
   int iter, i, j;
   const float inv_c = 1.0f / c;
 
-  // 20 passes over the whole grid, each pass gets closer to the answer
+  // 20 passes over the whole grid, each pass gets closer to the answer.
   for (iter = 0; iter < GAUSS_SEIDEL_ITERS; iter++) {
     for (j = 1; j <= grid_n; j++) {
       for (i = 1; i <= grid_n; i++) {
-        // blend this cell's start value with its 4 neighbors' latest values
+        // Blend this cell's start value with its 4 neighbors' latest values.
         field[IX(i, j)] = (field_prev[IX(i, j)] +
                            a * (field[IX(i - 1, j)] + field[IX(i + 1, j)] +
                                 field[IX(i, j - 1)] + field[IX(i, j + 1)])) *
                           inv_c;
       }
     }
-    apply_boundary(bnd_type, field); // refresh ghost ring for the next pass
+    apply_boundary(bnd_type, field); // Refresh ghost ring for the next pass.
   }
 }
 
@@ -99,27 +99,27 @@ static void advect(int bnd_type, float *field, const float *field_prev,
 
   for (j = 1; j <= grid_n; j++) {
     for (i = 1; i <= grid_n; i++) {
-      // step backward along this cell's own velocity
+      // Step backward along this cell's own velocity.
       origin_x = (float)i - dt_grid * vel_x[IX(i, j)];
       origin_y = (float)j - dt_grid * vel_y[IX(i, j)];
 
-      // keep it inside the grid so the lookup below stays in bounds
+      // Keep it inside the grid so the lookup below stays in bounds.
       origin_x = clamp(origin_x, 0.5f, limit);
       origin_y = clamp(origin_y, 0.5f, limit);
 
-      // the 4 real cells surrounding that (fractional) origin point
+      // The 4 real cells surrounding that (fractional) origin point.
       i0 = (int)origin_x;
       i1 = i0 + 1;
       j0 = (int)origin_y;
       j1 = j0 + 1;
 
-      // how close the origin is to each side -- used to weight the blend
+      // How close the origin is to each side, used to weight the blend.
       weight_i1 = origin_x - (float)i0;
       weight_i0 = 1.0f - weight_i1;
       weight_j1 = origin_y - (float)j0;
       weight_j0 = 1.0f - weight_j1;
 
-      // blend those 4 cells' old values by distance (bilinear interpolation)
+      // Blend those 4 cells' old values by distance (bilinear interpolation).
       field[IX(i, j)] = weight_i0 * (weight_j0 * field_prev[IX(i0, j0)] +
                                      weight_j1 * field_prev[IX(i0, j1)]) +
                         weight_i1 * (weight_j0 * field_prev[IX(i1, j0)] +
@@ -139,7 +139,7 @@ static void project(float *vel_x, float *vel_y, float *pressure,
   int i, j;
   const float h = 1.0f / (float)grid_n;
 
-  // measure how much more velocity leaves each cell than enters it
+  // Measure how much more velocity leaves each cell than enters it.
   for (j = 1; j <= grid_n; j++) {
     for (i = 1; i <= grid_n; i++) {
       divergence[IX(i, j)] = -0.5f * h *
@@ -151,10 +151,10 @@ static void project(float *vel_x, float *vel_y, float *pressure,
   apply_boundary(BND_SCALAR, divergence);
   apply_boundary(BND_SCALAR, pressure);
 
-  // solve for the pressure field that would cancel that imbalance out
+  // Solve for the pressure field that would cancel that imbalance out.
   solve_linear(BND_SCALAR, pressure, divergence, 1.0f, 4.0f);
 
-  // push velocity away from high pressure, toward low -- the actual fix
+  // Push velocity away from high pressure, toward low.
   for (j = 1; j <= grid_n; j++) {
     for (i = 1; i <= grid_n; i++) {
       vel_x[IX(i, j)] -=
@@ -167,7 +167,7 @@ static void project(float *vel_x, float *vel_y, float *pressure,
   apply_boundary(BND_VEL_Y, vel_y);
 }
 
-// Swaps which buffer counts as "current" vs "previous" -- no data copied,
+// Swaps which buffer counts as "current" vs "previous". No data copied,
 // just the pointers. Needed because diffuse/advect read every cell's old
 // value while writing every cell's new value, so each field keeps 2
 // buffers and flips which is which after each step.
@@ -177,8 +177,8 @@ static void swap_fields(float **field_a, float **field_b) {
   *field_b = tmp;
 }
 
-// One color channel, one frame: inject -> smooth -> carry along velocity.
-// No project() -- that's only for velocity, ink just rides along.
+// One color channel, one frame: inject, smooth, carry along velocity.
+// No project(): that's only for velocity, ink just rides along.
 // Takes float** so swap_fields() can actually repoint *ink/*ink_prev.
 void ink_step(float **ink, float **ink_prev, const float *vel_x,
               const float *vel_y, float diffusion, float dt, int total_cells) {
@@ -189,9 +189,9 @@ void ink_step(float **ink, float **ink_prev, const float *vel_x,
   advect(BND_SCALAR, *ink, *ink_prev, vel_x, vel_y, dt);
 }
 
-// Velocity, one frame: force -> smooth -> fix imbalance -> self-carry ->
-// fix imbalance again (smoothing and self-carrying each reintroduce a
-// little imbalance, so it needs cleaning up twice).
+// Velocity, one frame: force, smooth, fix imbalance, self-carry, fix
+// imbalance again (smoothing and self-carrying each reintroduce a little
+// imbalance, so it needs cleaning up twice).
 void velocity_step(FluidFields *fields, float viscosity, float dt) {
   add_source(fields->vel_x, fields->vel_x_p, dt, fields->total_cells);
   add_source(fields->vel_y, fields->vel_y_p, dt, fields->total_cells);
@@ -203,8 +203,8 @@ void velocity_step(FluidFields *fields, float viscosity, float dt) {
 
   project(fields->vel_x, fields->vel_y, fields->pressure, fields->divergence);
 
-  // velocity carries itself -- vel_x_p/vel_y_p are both the field being
-  // moved AND the flow doing the moving
+  // Velocity carries itself: vel_x_p/vel_y_p are both the field being
+  // moved and the flow doing the moving.
   swap_fields(&fields->vel_x_p, &fields->vel_x);
   swap_fields(&fields->vel_y_p, &fields->vel_y);
   advect(BND_VEL_X, fields->vel_x, fields->vel_x_p, fields->vel_x_p,
