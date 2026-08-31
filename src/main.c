@@ -145,23 +145,34 @@ int main(int argc, char *argv[])
     /* Linear filtering so the scaled grid doesn't look pixelated */
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");
 
-    Uint32 window_flags = SDL_WINDOW_SHOWN;
-    if (config.fullscreen) {
-        window_flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
-        SDL_ShowCursor(SDL_DISABLE);
-    }
-
     window = SDL_CreateWindow("Fluid screensaver - sequential",
                               SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                               config.window_width, config.window_height,
-                              window_flags);
+                              SDL_WINDOW_SHOWN);
     if (window == NULL) {
         fprintf(stderr, "Error: could not create the window: %s\n", SDL_GetError());
         exit_code = EXIT_FAILURE;
         goto cleanup;
     }
 
-    /* Gets the actual size SDL assigned */
+    /* Fullscreen is requested on the window *after* creation, not via a
+     * flag to SDL_CreateWindow: on tiling WMs (i3, sway, bspwm, ...) the
+     * window manager places/sizes new windows through its own logic before
+     * reacting to window state, and a fullscreen flag baked into window
+     * creation can race with that and get silently dropped, leaving a
+     * normal tiled window instead. Requesting it against the
+     * already-created (and thus already-managed) window is what SDL itself
+     * recommends and is handled reliably even by tiling WMs, since
+     * fullscreen is its own distinct window state, separate from tiling. */
+    if (config.fullscreen) {
+        if (SDL_SetWindowFullscreen(window, SDL_WINDOW_FULLSCREEN_DESKTOP) != 0) {
+            fprintf(stderr, "Warning: could not enter fullscreen: %s\n",
+                    SDL_GetError());
+        }
+        SDL_ShowCursor(SDL_DISABLE);
+    }
+
+    /* Gets the actual size SDL assigned (post-fullscreen, if requested) */
     SDL_GetWindowSize(window, &config.window_width, &config.window_height);
 
     renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
