@@ -6,41 +6,16 @@ tablas de resultados a medida que se prueba cada version/rama.
 
 ## Mapa de ramas
 
-| Rama            | Binario           | Hilos | Solver de presion/difusion      | Fullscreen | CLI / codigo |
-|-----------------|-------------------|-------|----------------------------------|------------|--------------|
-| `master`        | `Screensaver_seq` | 1     | Gauss-Seidel fila por fila       | si (`-p`)  | vieja, sin tocar (congelada en `f6bca8a`) |
-| `sequential`    | `ss`              | 1     | Gauss-Seidel fila por fila       | si (`-p`)  | actual: ingles, sin `-t`/`-b`, `src/` plano |
-| `parallel-omp`  | `ss`              | N     | Red-black (paralelizable)        | no         | vieja, congelada antes de la traduccion/limpieza |
+| Rama            | Que es | Se toca? |
+|-----------------|--------|----------|
+| `sequential`    | Baseline puro, congelado para siempre: 1 hilo, n-body O(F^2) fuerza bruta, solver Gauss-Seidel fila por fila. Referencia fija para comparar speedup acumulado. | **Nunca** — ni un commit mas despues del baseline. |
+| `master`        | Rama de integracion. Acumula cada paso terminado via merge (fast-forward). Siempre representa "lo mejor que tenemos ahora mismo". | Solo via merge de una rama de paso ya terminada y medida. |
+| `01-rb-tree`, `02-omp-loops`, `03-omp-solver`, ... | Una rama por paso del roadmap. Cada una sale de `master` (no de `sequential`), implementa un solo cambio, se mide, y se mergea de vuelta a `master` cuando esta lista. | Ahi es donde pasa el trabajo real. |
+| `parallel-omp`  | Referencia externa congelada: la version OpenMP tal cual quedo antes de toda esta reorganizacion (fuera de esta cadena, con su propia CLI vieja). Sirve para saber "a donde se puede llegar", no se integra directamente. | Nunca. |
 
-`master` quedo intencionalmente sin tocar despues del reset a `f6bca8a` (ver
-el resto de esta conversacion): todo el trabajo de traduccion a ingles,
-aplanado de `src/secuencial/` a `src/`, renombrado del binario a `ss` y
-limpieza de la CLI (quitar `-t`/`-b`) paso unicamente en `sequential`. Si se
-compara con `master` hay que tener en cuenta que ese binario todavia se
-llama `Screensaver_seq`, sigue en espanol y sigue teniendo `-t`/`-b`.
-
-`sequential` = referencia correcta para medir speedup: mismos parametros,
-mismo comportamiento visual, sin OpenMP y con el algoritmo de solver que de
-verdad es secuencial (no el red-black, que solo existe para poder
-paralelizarse — ver la nota en `solver.c`).
-
-`parallel-omp` es la version con OpenMP tal cual quedo tras el refactor de
-render/fuentes/fondo, con `-fopenmp` en el Makefile. **A partir de aqui se
-deja como referencia congelada** (para ver el resultado final de a donde se
-quiere llegar) y todo el trabajo de optimizacion incremental se hace sobre
-`sequential`, creando una rama nueva por cada paso del checklist mas abajo.
-`parallel-omp` tambien quedo congelada con la CLI vieja (todavia tiene `-t`
-para dt y `-b` para alternar n-body, ambos ya eliminados en `sequential`: ahi
-dt es fijo y el n-body siempre esta activo) y sin fullscreen — no se le sigue
-actualizando a la par de `sequential`. Al comparar FPS entre ramas, tener en
-cuenta que la CLI difiere.
-
-**Ninguna rama de paso incremental existe todavia.** Todo el trabajo activo
-pasa en `sequential`: se implementa el paso ahi, se corre el benchmark, se
-llena la tabla, se hace commit, y **recien entonces** se crea la rama de
-ese paso como snapshot (ver "Roadmap de pasos" mas abajo para el orden y
-nombres planeados: `01-rb-tree`, `02-omp-loops`, `03-omp-solver`,
-`04-schedule-tuning`, `05-collapse-tuning`). No crear ramas por adelantado.
+Regla simple: **`sequential` = punto de comparacion fijo. `master` = donde
+vive el progreso acumulado. Los pasos numerados = donde se hace el trabajo.**
+Nunca se implementa nada directamente en `sequential` ni en `master`.
 
 ---
 
@@ -215,30 +190,29 @@ benchmark de rendimiento.
 
 ### Roadmap de pasos
 
-Orden planeado (nombres de rama sugeridos para cuando se llegue a cada
-uno — **ninguna de estas ramas existe todavia**, se crean sobre la marcha):
-
 ```
-sequential ──▶ 01-rb-tree ──▶ 02-omp-loops ──▶ 03-omp-solver ──▶ 04-schedule-tuning ──▶ 05-collapse-tuning
+master ──▶ 01-rb-tree ──(merge)──▶ master ──▶ 02-omp-loops ──(merge)──▶ master ──▶ 03-omp-solver ──▶ ...
 ```
 
-- [x] **Paso 0, baseline** — 1 hilo, n-body O(F^2) con fuerza bruta, solver
-      Gauss-Seidel fila por fila. *(ya no es la punta de `sequential`, que
-      avanzo al Paso 1 -- este estado sigue vivo en `master`, que se quedo
-      congelada ahi a proposito. Columna "baseline" en la tabla maestra.)*
-- [x] **Paso 1 — `01-rb-tree`**: arbol para n-body (Barnes-Hut): reemplazo el
-      loop O(F^2) de `update_nbody_sources()` (`nbody.c`) por un quadtree
-      con aproximacion por centro de masa, O(F log F). Sigue siendo
-      secuencial (sin OpenMP todavia). *(implementado y medido -- FPS
-      practicamente identico al baseline en todo el rango probado, incluso
-      con f alto: a estas resoluciones el solver de fluidos domina tanto
-      que el algoritmo de n-body no se nota todavia. Commit vive en
-      `sequential`, con `01-rb-tree` apuntando al mismo commit.)*
-- [ ] **Paso 2 — `02-omp-loops`**: paralelizar los loops "faciles": los sitios
-      1, 2, 4, 5, 6 del catalogo de arriba (fuente/disipacion/adveccion/
-      proyeccion/render) — todos son `#pragma omp parallel for` directo,
-      sin cambiar el algoritmo. El solver de presion/difusion se queda
-      secuencial todavia (sigue siendo Gauss-Seidel fila por fila).
+Cada paso sale de `master` (con el paso anterior ya mergeado adentro), y
+vuelve a mergearse a `master` cuando esta terminado y medido.
+
+- [x] **Paso 0, baseline** — vive para siempre en `sequential`. 1 hilo,
+      n-body O(F^2) fuerza bruta, solver Gauss-Seidel fila por fila.
+- [x] **Paso 1 — `01-rb-tree`** (mergeado a `master`): arbol para n-body
+      (Barnes-Hut), reemplaza el loop O(F^2) de `update_nbody_sources()`
+      (`nbody.c`) por un quadtree con aproximacion por centro de masa,
+      O(F log F). Sigue secuencial (sin OpenMP todavia). FPS practicamente
+      identico al baseline en todo el rango probado, incluso con `f` alto:
+      a estas resoluciones el solver de fluidos domina tanto que el
+      algoritmo de n-body no se nota todavia.
+- [x] **Paso 2 — `02-omp-loops`** (mergeado a `master`): paraleliza los
+      loops "faciles" (sitios 1, 2, 4, 5, 6 del catalogo de arriba:
+      fuente/disipacion/adveccion/proyeccion/render) con
+      `#pragma omp parallel for`, sin cambiar el algoritmo. El solver de
+      presion/difusion se queda secuencial todavia (sigue siendo
+      Gauss-Seidel fila por fila, es el Paso 3). Buen salto de FPS
+      (ver tabla maestra) incluso sin tocar el hotspot principal.
 - [ ] **Paso 3 — `03-omp-solver`**: red-black + paralelizar el solver: el
       cambio algoritmico del catalogo (seccion 3 de arriba) — se espera que
       sea el salto mas grande, es el hotspot principal.
@@ -252,25 +226,75 @@ sequential ──▶ 01-rb-tree ──▶ 02-omp-loops ──▶ 03-omp-solver �
 - [ ] **Paso 6 (opcional)** — SIMD / autovectorizacion, `-O2` vs `-O3` como
       variable de build.
 
-`parallel-omp` (la rama congelada) ya tiene implementados los pasos 2 y 3
-juntos (mas los cambios visuales de resolucion/fondo/render que no son
-parte de este roadmap de performance) — sirve como referencia de "a donde
-se puede llegar", pero la cadena de arriba se construye de nuevo, paso por
-paso, para poder medir cada incremento por separado.
+`parallel-omp` (la rama congelada, fuera de esta cadena) ya tiene
+implementados los pasos 2 y 3 juntos (mas cambios visuales que no son parte
+de este roadmap de performance) — sirve como referencia de "a donde se
+puede llegar", pero esta cadena se construye de nuevo para medir cada
+incremento por separado.
 
-**Flujo de trabajo real, un paso a la vez** (todo el trabajo activo pasa en
-`sequential` hasta terminar un paso):
+---
 
-1. Sobre `sequential`, implementar el cambio del paso actual.
-2. Compilar (`make`) y correr la bateria de benchmark completa (ver abajo).
-3. Pegar los resultados en la tabla maestra de este documento.
-4. Commit en `sequential` (codigo + tabla actualizada + checkbox marcado).
-5. Recien ahi, crear la rama de este paso apuntando a ese commit
-   (`git branch <nombre-del-paso>`, p.ej. `git branch 01-rb-tree` despues de
-   terminar el Paso 1) como snapshot/checkpoint — no antes.
-6. Seguir trabajando en `sequential` para el siguiente paso.
+## Flujo de trabajo (para el equipo)
 
-No crear ramas por adelantado para pasos que todavia no se implementaron.
+Cada paso pendiente (Paso 3 en adelante) lo puede tomar cualquiera del
+equipo siguiendo estos pasos. Un solo paso = una sola rama = un solo
+commit de codigo (mas, si aplica, un commit chico separado con los
+resultados del benchmark). Nada de commits micro por cada ajuste.
+
+1. **Asegurate de tener `master` actualizado** (el que va a tener el ultimo
+   paso ya mergeado):
+   ```bash
+   git checkout master
+   git pull
+   ```
+2. **Crea tu rama del paso que te toca**, con el nombre exacto del roadmap
+   de arriba (ej. para el Paso 3):
+   ```bash
+   git checkout -b 03-omp-solver master
+   ```
+3. **Implementa el cambio de ese paso** (ver el catalogo de optimizaciones
+   mas arriba en este documento para el detalle tecnico de cada uno).
+   Mismo estilo de comentarios que el resto del codigo: cortos, en ingles,
+   sin jerga sin explicar.
+4. **Compila y prueba que corre** (`make`, correr el binario un rato,
+   confirmar que no crashea y se ve razonable):
+   ```bash
+   make clean && make
+   ./ss -n 256 -f 6
+   ```
+5. **Commit del codigo** (uno solo, mensaje explicando que cambia y por
+   que, sin tabla de benchmark todavia si no la vas a correr vos mismo):
+   ```bash
+   git add -A
+   git commit -m "feat: <resumen corto del cambio>"
+   ```
+6. **Push de tu rama** y avisar:
+   ```bash
+   git push -u origin 03-omp-solver
+   ```
+   A partir de ahi, **yo corro la bateria de benchmark oficial** (ver
+   "Metodologia de benchmark" y "Comandos" mas abajo en este documento) y
+   lleno la tabla maestra, para que todos los numeros salgan de la misma
+   maquina/condiciones y sean comparables entre si. Si vos ya corriste tus
+   propios numeros como referencia rapida, dejalos en el mensaje del PR o
+   en el chat, no hace falta que entren al documento.
+7. **Una vez medido y con la tabla llena**, se mergea a `master`
+   (fast-forward, sin commit de merge):
+   ```bash
+   git checkout master
+   git merge 03-omp-solver --ff-only
+   ```
+8. El siguiente paso se crea sobre este nuevo `master` (que ya incluye tu
+   trabajo), repitiendo desde el paso 1.
+
+**Reglas rapidas**:
+- Nunca commitear directo en `sequential` o en `master`.
+- Una rama = un paso del roadmap, no una mezcla de varios.
+- Si tu cambio no compila limpio con `-Wall -Wextra` o rompe el build,
+  arreglalo antes de pedir que se corra el benchmark.
+- Si encontras un bug o comportamiento raro que no es parte de tu paso
+  (como el problema de pixelado de tinta que ya se reviso), avisa en vez
+  de mezclarlo en el mismo commit — se resuelve aparte.
 
 ---
 
@@ -365,23 +389,23 @@ done
 FPS promedio por combinacion de fila-de-matriz x paso. Ir agregando una
 columna por cada paso conforme se implementa y se corre la bateria.
 
-| Fila matriz | baseline (`master`, pre-Barnes-Hut) | `sequential` / `01-rb-tree` (Barnes-Hut) | `02-omp-loops` | `03-omp-solver` | `04-schedule-tuning` | `05-collapse-tuning` |
+| Fila matriz | `sequential` (baseline) | `01-rb-tree` | `02-omp-loops` | `03-omp-solver` | `04-schedule-tuning` | `05-collapse-tuning` |
 |---|---|---|---|---|---|---|
-| A6 (n=64, f=6) | 17.21 | 17.19 | | | | |
-| A12 (n=64, f=12) | 17.16 | 17.20 | | | | |
-| B6 (n=256, f=6) | 10.52 | 10.51 | | | | |
-| B12 (n=256, f=12) | 10.95 | 10.95 | | | | |
-| C6 (n=512, f=6) | 3.75 | 3.76 | | | | |
-| C12 (n=512, f=12) | 4.30 | 4.30 | | | | |
-| H6 (n=600, f=6) | 2.69 | 2.69 | | | | |
-| H12 (n=600, f=12) | 3.09 | 3.09 | | | | |
-| I6 (n=700, f=6) | 1.90 | 1.91 | | | | |
-| I12 (n=700, f=12) | 2.10 | 2.10 | | | | |
-| D6 (n=1024, f=6) | 0.92 | 0.92 | | | | |
-| D12 (n=1024, f=12) | 1.00 | 0.99 | | | | |
-| E (n=256, f=4) | 7.52 | 7.52 | | | | |
-| F (n=256, f=64) | 11.39 | 11.39 | | | | |
-| G (n=256, f=256) | 11.37 | 11.38 | | | | |
+| A6 (n=64, f=6) | 17.21 | 17.19 | 118.40 | | | |
+| A12 (n=64, f=12) | 17.16 | 17.20 | 117.43 | | | |
+| B6 (n=256, f=6) | 10.52 | 10.51 | 25.20 | | | |
+| B12 (n=256, f=12) | 10.95 | 10.95 | 25.24 | | | |
+| C6 (n=512, f=6) | 3.75 | 3.76 | 6.72 | | | |
+| C12 (n=512, f=12) | 4.30 | 4.30 | 6.89 | | | |
+| H6 (n=600, f=6) | 2.69 | 2.69 | 4.46 | | | |
+| H12 (n=600, f=12) | 3.09 | 3.09 | 4.79 | | | |
+| I6 (n=700, f=6) | 1.90 | 1.91 | 3.00 | | | |
+| I12 (n=700, f=12) | 2.10 | 2.10 | 3.21 | | | |
+| D6 (n=1024, f=6) | 0.92 | 0.92 | 1.15 | | | |
+| D12 (n=1024, f=12) | 1.00 | 0.99 | 1.23 | | | |
+| E (n=256, f=4) | 7.52 | 7.52 | 24.39 | | | |
+| F (n=256, f=64) | 11.39 | 11.39 | 25.36 | | | |
+| G (n=256, f=256) | 11.37 | 11.38 | 25.30 | | | |
 
 Medido en local (display real, no headless), corridas de ~15s por fila,
 promedio ignorando los primeros ~2s de warm-up, `-s 42` en todas.
@@ -389,8 +413,13 @@ Barnes-Hut da practicamente el mismo FPS que fuerza bruta en todo el rango
 probado (incluyendo f=64/256): a estas resoluciones de malla el solver de
 fluidos domina tanto el costo que el algoritmo de n-cuerpos, sea O(F^2) o
 O(F log F), no se nota en el FPS total. Sigue siendo la base correcta para
-cuando se paralelice el solver (Pasos 2+), donde el resto del frame sera
+cuando se paralelice el solver (Paso 3+), donde el resto del frame sera
 mas barato relativamente y el n-body podria empezar a pesar mas.
+
+`02-omp-loops` (fuente/disipacion/adveccion/proyeccion/render en paralelo,
+solver todavia secuencial) ya da un salto claro con 20 hilos: ~6-7x en las
+mallas grandes (C/H/I/D) y hasta ~7x en las chicas (A). El techo sigue
+siendo el solver de presion/difusion (Gauss-Seidel), que es el Paso 3.
 
 ### Curva de escalabilidad por hilos (desde el Paso 2 en adelante)
 
@@ -398,12 +427,18 @@ Usar la fila B (n=256, f=6) como referencia, variando `OMP_NUM_THREADS`:
 
 | Hilos | FPS `02-omp-loops` | FPS `03-omp-solver` | FPS `04-schedule-tuning` | FPS `05-collapse-tuning` |
 |-------|------------------|-------------------|-------------------------|--------------------------|
-| 1     |                  |                   |                         |                          |
-| 2     |                  |                   |                         |                          |
-| 4     |                  |                   |                         |                          |
-| 8     |                  |                   |                         |                          |
-| 16    |                  |                   |                         |                          |
-| 20    |                  |                   |                         |                          |
+| 1     | 9.95             |                   |                         |                          |
+| 2     | 14.94            |                   |                         |                          |
+| 4     | 20.33            |                   |                         |                          |
+| 8     | 23.57            |                   |                         |                          |
+| 16    | 25.52            |                   |                         |                          |
+| 20    | 25.57            |                   |                         |                          |
+
+A 1 hilo (9.95 FPS) `02-omp-loops` da casi lo mismo que `01-rb-tree`
+(10.51, diferencia es solo ruido de medicion) — tiene sentido, con 1 hilo
+OpenMP no cambia nada. El escalado de ahi hasta 20 hilos (2.6x) muestra el
+techo del Amdahl: el solver secuencial que queda (Paso 3) sigue limitando
+cuanto puede escalar el resto.
 
 ---
 
