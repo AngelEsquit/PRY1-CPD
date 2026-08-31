@@ -213,7 +213,7 @@ vuelve a mergearse a `master` cuando esta terminado y medido.
       presion/difusion se queda secuencial todavia (sigue siendo
       Gauss-Seidel fila por fila, es el Paso 3). Buen salto de FPS
       (ver tabla maestra) incluso sin tocar el hotspot principal.
-- [ ] **Paso 3 — `03-omp-solver`**: red-black + paralelizar el solver: el
+- [x] **Paso 3 — `03-omp-solver`**: red-black + paralelizar el solver: el
       cambio algoritmico del catalogo (seccion 3 de arriba) — se espera que
       sea el salto mas grande, es el hotspot principal.
 - [ ] **Paso 4 — `04-schedule-tuning`**: probar `static`/`dynamic`/`guided`

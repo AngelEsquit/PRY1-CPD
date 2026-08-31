@@ -50,31 +50,50 @@ static void add_source(float *dest, const float *source, float dt,
   }
 }
 
-// Iteratively solves  new_value = (starting_value + a * sum_of_4_neighbors) / c
-// for every cell. Used for both diffusion (smoothing) and the pressure
-// solve inside project(). Same "every cell depends on its neighbors"
-// trick, different a/c.
+// Relaxes a single color of the checkerboard (parity = (i + j) % 2) from
+// within an active OpenMP parallel region (see solve_linear). The 4 neighbors
+// of any colored cell always have the opposite color, so cells of the same
+// parity have no data dependencies between them and can be computed in
+// parallel without race conditions.
+static void relax_color(float *field, const float *field_prev, float a,
+                        float inv_c, int parity) {
+  #pragma omp for schedule(dynamic, 16)
+  for (int j = 1; j <= grid_n; j++) {
+    int start_i = (((1 + j) % 2) == parity) ? 1 : 2;
+
+    for (int i = start_i; i <= grid_n; i += 2) {
+      field[IX(i, j)] = (field_prev[IX(i, j)] +
+                         a * (field[IX(i - 1, j)] + field[IX(i + 1, j)] +
+                              field[IX(i, j - 1)] + field[IX(i, j + 1)])) *
+                        inv_c;
+    }
+  }
+}
+
+// Iteratively solves new_value = (starting_value + a * sum_of_4_neighbors) / c
+// using Red-Black Gauss-Seidel relaxation. Each iteration is split into two
+// sub-steps: red cells (parity 0) then black cells (parity 1).
 //
-// Not parallel-safe: writes each cell's result back into `field` and
-// immediately reads that fresh value for the next cell, so cell (i+1,j)
-// depends on (i,j) having already been computed this pass.
+// A single OpenMP parallel region encloses all GAUSS_SEIDEL_ITERS iterations
+// to avoid thread team fork/join overhead on every sub-step. Implicit
+// barriers at the end of each omp for ensure synchronization between red
+// and black sweeps, while omp single ensures only one thread updates the
+// boundary conditions.
 static void solve_linear(int bnd_type, float *field, const float *field_prev,
                          float a, float c) {
-  int iter, i, j;
   const float inv_c = 1.0f / c;
 
-  // 20 passes over the whole grid, each pass gets closer to the answer.
-  for (iter = 0; iter < GAUSS_SEIDEL_ITERS; iter++) {
-    for (j = 1; j <= grid_n; j++) {
-      for (i = 1; i <= grid_n; i++) {
-        // Blend this cell's start value with its 4 neighbors' latest values.
-        field[IX(i, j)] = (field_prev[IX(i, j)] +
-                           a * (field[IX(i - 1, j)] + field[IX(i + 1, j)] +
-                                field[IX(i, j - 1)] + field[IX(i, j + 1)])) *
-                          inv_c;
+  #pragma omp parallel
+  {
+    for (int iter = 0; iter < GAUSS_SEIDEL_ITERS; iter++) {
+      relax_color(field, field_prev, a, inv_c, 0);
+      relax_color(field, field_prev, a, inv_c, 1);
+
+      #pragma omp single
+      {
+        apply_boundary(bnd_type, field);
       }
     }
-    apply_boundary(bnd_type, field); // Refresh ghost ring for the next pass.
   }
 }
 
