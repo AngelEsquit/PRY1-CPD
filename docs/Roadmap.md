@@ -216,7 +216,7 @@ vuelve a mergearse a `master` cuando esta terminado y medido.
 - [x] **Paso 3 — `03-omp-solver`**: red-black + paralelizar el solver: el
       cambio algoritmico del catalogo (seccion 3 de arriba) — se espera que
       sea el salto mas grande, es el hotspot principal.
-- [ ] **Paso 4 — `04-schedule-tuning`**: probar `static`/`dynamic`/`guided`
+- [x] **Paso 4 — `04-schedule-tuning`**: probar `static`/`dynamic`/`guided`
       y distintos tamanos de chunk sobre el resultado del paso 3, variando
       `-n` (mallas chicas vs. grandes reaccionan distinto al overhead de
       reparto de trabajo).
