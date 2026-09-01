@@ -220,11 +220,9 @@ vuelve a mergearse a `master` cuando esta terminado y medido.
       y distintos tamanos de chunk sobre el resultado del paso 3, variando
       `-n` (mallas chicas vs. grandes reaccionan distinto al overhead de
       reparto de trabajo).
-- [ ] **Paso 5 — `05-collapse-tuning`**: `collapse(2)` si/no, comparar contra
-      paralelizar solo el loop externo, especialmente relevante en `-n`
-      chico (menos filas que `nproc`).
-- [ ] **Paso 6 (opcional)** — SIMD / autovectorizacion, `-O2` vs `-O3` como
-      variable de build.
+- [ ] ~~Paso 5 — `05-collapse-tuning`~~ — cancelado, no se persigue mas.
+- [x] **Paso 6 (opcional)** — SIMD / autovectorizacion, `-O2` vs `-O3` como
+      variable de build. Ver resultados abajo.
 
 `parallel-omp` (la rama congelada, fuera de esta cadena) ya tiene
 implementados los pasos 2 y 3 juntos (mas cambios visuales que no son parte
@@ -389,23 +387,47 @@ done
 FPS promedio por combinacion de fila-de-matriz x paso. Ir agregando una
 columna por cada paso conforme se implementa y se corre la bateria.
 
-| Fila matriz | `sequential` (baseline) | `01-rb-tree` | `02-omp-loops` | `03-omp-solver` | `04-schedule-tuning` | `05-collapse-tuning` |
-|---|---|---|---|---|---|---|
-| A6 (n=64, f=6) | 17.21 | 17.19 | 118.40 | | | |
-| A12 (n=64, f=12) | 17.16 | 17.20 | 117.43 | | | |
-| B6 (n=256, f=6) | 10.52 | 10.51 | 25.20 | | | |
-| B12 (n=256, f=12) | 10.95 | 10.95 | 25.24 | | | |
-| C6 (n=512, f=6) | 3.75 | 3.76 | 6.72 | | | |
-| C12 (n=512, f=12) | 4.30 | 4.30 | 6.89 | | | |
-| H6 (n=600, f=6) | 2.69 | 2.69 | 4.46 | | | |
-| H12 (n=600, f=12) | 3.09 | 3.09 | 4.79 | | | |
-| I6 (n=700, f=6) | 1.90 | 1.91 | 3.00 | | | |
-| I12 (n=700, f=12) | 2.10 | 2.10 | 3.21 | | | |
-| D6 (n=1024, f=6) | 0.92 | 0.92 | 1.15 | | | |
-| D12 (n=1024, f=12) | 1.00 | 0.99 | 1.23 | | | |
-| E (n=256, f=4) | 7.52 | 7.52 | 24.39 | | | |
-| F (n=256, f=64) | 11.39 | 11.39 | 25.36 | | | |
-| G (n=256, f=256) | 11.37 | 11.38 | 25.30 | | | |
+| Fila matriz | `sequential` (baseline) | `01-rb-tree` | `02-omp-loops` | `03-omp-solver` | `04-schedule-tuning` |
+|---|---|---|---|---|---|
+| A6 (n=64, f=6) | 17.21 | 17.19 | 118.40 | 88.04 | 83.87 |
+| A12 (n=64, f=12) | 17.16 | 17.20 | 117.43 | 88.31 | 84.39 |
+| B6 (n=256, f=6) | 10.52 | 10.51 | 25.20 | 88.27 | 80.68 |
+| B12 (n=256, f=12) | 10.95 | 10.95 | 25.24 | 88.66 | 80.92 |
+| C6 (n=512, f=6) | 3.75 | 3.76 | 6.72 | 45.79 | 68.57 |
+| C12 (n=512, f=12) | 4.30 | 4.30 | 6.89 | 52.33 | 69.53 |
+| H6 (n=600, f=6) | 2.69 | 2.69 | 4.46 | 33.72 | 61.41 |
+| H12 (n=600, f=12) | 3.09 | 3.09 | 4.79 | 41.39 | 62.29 |
+| I6 (n=700, f=6) | 1.90 | 1.91 | 3.00 | 28.32 | 53.47 |
+| I12 (n=700, f=12) | 2.10 | 2.10 | 3.21 | 35.57 | 54.76 |
+| D6 (n=1024, f=6) | 0.92 | 0.92 | 1.15 | 5.10 | 4.64 |
+| D12 (n=1024, f=12) | 1.00 | 0.99 | 1.23 | 6.32 | 3.21 |
+| E (n=256, f=4) | 7.52 | 7.52 | 24.39 | 87.09 | pendiente |
+| F (n=256, f=64) | 11.39 | 11.39 | 25.36 | 87.28 | pendiente |
+| G (n=256, f=256) | 11.37 | 11.38 | 25.30 | 85.07 | pendiente |
+
+`03-omp-solver` (red-black Gauss-Seidel, hotspot finally parallel) es el
+salto mas grande de toda la cadena: B6 pasa de 25.20 a 88.27 FPS (~3.5x
+sobre `02-omp-loops`, ~8.4x sobre `sequential`).
+
+`04-schedule-tuning` cambio el `schedule(dynamic, 16)` hardcodeado por
+`schedule(static)` en todos los sitios del catalogo (aplicado de verdad
+al codigo de la rama, no solo probado con `OMP_SCHEDULE`), basado en el
+barrido de la seccion de abajo. El resultado es un **tradeoff real**, no
+una mejora universal:
+
+- Malla chica (A6, B6): `static` pierde un poco contra `dynamic, 16`
+  (88.27 -> 80.68 en B6, ~-8.6%).
+- Malla grande (C6, H6, I6): `static` gana fuerte (45.79 -> 68.57 en C6,
+  ~+50%; 28.32 -> 53.47 en I6, ~+89%).
+- Malla muy grande (D6, D12, n=1024): resultado mixto/con ruido (D12 bajo
+  a 3.21 desde 6.32 — no se investigo a fondo, posible ruido de medicion
+  o comportamiento distinto a esa escala).
+
+Filas E/F/G (variando `-f`, no `-n`) quedaron sin remedir con el schedule
+nuevo — pendiente si se quiere el dato completo.
+
+El Paso 5 (`05-collapse-tuning`, `collapse(2)` si/no) fue cancelado, no se
+persigue mas.
 
 Medido en local (display real, no headless), corridas de ~15s por fila,
 promedio ignorando los primeros ~2s de warm-up, `-s 42` en todas.
@@ -425,20 +447,125 @@ siendo el solver de presion/difusion (Gauss-Seidel), que es el Paso 3.
 
 Usar la fila B (n=256, f=6) como referencia, variando `OMP_NUM_THREADS`:
 
-| Hilos | FPS `02-omp-loops` | FPS `03-omp-solver` | FPS `04-schedule-tuning` | FPS `05-collapse-tuning` |
-|-------|------------------|-------------------|-------------------------|--------------------------|
-| 1     | 9.95             |                   |                         |                          |
-| 2     | 14.94            |                   |                         |                          |
-| 4     | 20.33            |                   |                         |                          |
-| 8     | 23.57            |                   |                         |                          |
-| 16    | 25.52            |                   |                         |                          |
-| 20    | 25.57            |                   |                         |                          |
+| Hilos | FPS `02-omp-loops` | FPS `03-omp-solver` (`dynamic,16`) |
+|-------|------------------|-------------------|
+| 1     | 9.95             | 14.72             |
+| 2     | 14.94            | 25.39             |
+| 4     | 20.33            | 45.94             |
+| 8     | 23.57            | 67.84             |
+| 16    | 25.52            | 83.27             |
+| 20    | 25.57            | 87.76             |
+
+Nota: esta curva es de `03-omp-solver` (`dynamic,16`). `04-schedule-tuning`
+ahora corre con `schedule(static)` aplicado de verdad al codigo (ver mas
+abajo) — su propia curva de hilos en esta fila (B, n=256) no se volvio a
+medir todavia, pendiente si se quiere el dato.
 
 A 1 hilo (9.95 FPS) `02-omp-loops` da casi lo mismo que `01-rb-tree`
 (10.51, diferencia es solo ruido de medicion) — tiene sentido, con 1 hilo
 OpenMP no cambia nada. El escalado de ahi hasta 20 hilos (2.6x) muestra el
 techo del Amdahl: el solver secuencial que queda (Paso 3) sigue limitando
 cuanto puede escalar el resto.
+
+Desde `03-omp-solver` en adelante el solver ya es paralelo, y el
+escalado por hilos mejora bastante: 1 hilo (14.72 FPS) hasta 20 hilos
+(87.76 FPS) es **~6x**, muy por encima del ~2.6x que se veia en
+`02-omp-loops` con el solver todavia secuencial — confirma que el Paso 3
+era el cuello de botella real para el paralelismo.
+
+### Curva de escalabilidad en malla grande (n=700, f=12)
+
+La tabla de arriba usa la fila B (n=256, la config default), donde el
+solver es relativamente barato. Para ver el escalado en un caso donde el
+solver domina mas el costo, se corrio la misma curva de hilos (sobre el
+codigo actual de `04-schedule-tuning`) con la fila I12 (n=700, f=12),
+comparando el `schedule(dynamic, 16)` hardcodeado actual contra `static`
+(el mejor schedule encontrado para malla grande, ver seccion de abajo):
+
+| Hilos | FPS `dynamic,16` (actual) | FPS `static` (mejor encontrado) |
+|-------|---------------------------|----------------------------------|
+| 1     | —                         | 6.82                             |
+| 2     | —                         | 15.25                            |
+| 4     | —                         | 30.58                            |
+| 8     | —                         | 41.02                            |
+| 16    | —                         | 53.80                            |
+| 20    | 34.59                     | 48.11                            |
+
+Con `static`, 20 hilos da **48.11 FPS** contra los **34.59 FPS** que da
+el `dynamic,16` actual en la misma fila — **+39%** solo cambiando el
+schedule, sin tocar el algoritmo. Tambien vale notar que con `static` el
+pico esta en **16 hilos (53.80 FPS)**, no en 20 — a esta cantidad de filas
+(700) el reparto estatico en 20 partes no cae tan parejo como en 16,
+mientras que con `dynamic` deberia seguir escalando un poco mas alla (no
+medido a mas hilos por falta de mas nucleos en esta maquina). No se corrio
+la columna `dynamic,16` completa (1-16 hilos) para esta fila, solo el
+punto de 20 hilos que ya estaba en la matriz estandar.
+
+### Paso 4 — barrido de `schedule`/chunk (`04-schedule-tuning`)
+
+El commit original de esta rama solo marco el checkbox del roadmap sin
+cambiar codigo. Para explorar `static`/`dynamic`/`guided` sin recompilar
+por cada combinacion, se cambiaron temporalmente los `#pragma` a
+`schedule(runtime)` (controlable con la variable de entorno
+`OMP_SCHEDULE`) y se corrio el barrido de abajo. Con ese resultado en
+mano, se aplico `schedule(static)` de verdad al codigo de la rama
+(reemplazando el `schedule(dynamic, 16)` hardcodeado en todos los sitios
+del catalogo) — no quedo solo como recomendacion, es el estado actual del
+codigo. Los numeros resultantes de ese cambio real estan en la tabla
+maestra mas arriba.
+
+Barrido a 20 hilos, comparando malla chica (n=256) contra malla grande
+(n=700), `-f 6 -s 42`:
+
+| `OMP_SCHEDULE` | FPS n=256 | FPS n=700 |
+|---|---|---|
+| `static` (chunk default) | 83.40 | **54.47** |
+| `static,4` | 83.57 | 43.01 |
+| `static,16` | 84.53 | 46.87 |
+| `static,64` | 72.89 | 44.42 |
+| `dynamic,1` | 31.19 | 5.55 |
+| `dynamic,4` | 64.36 | 15.77 |
+| `dynamic,16` (**hardcodeado actual**) | 87.58 | 21.93 |
+| `dynamic,64` | 76.88 | 2.02 |
+| `guided` (chunk default) | **96.80** | 49.42 |
+| `guided,16` | 94.71 | 3.43 |
+
+**Hallazgo principal**: el `dynamic, 16` que esta hardcodeado en todo el
+codigo hoy es una buena eleccion para malla chica (87.58, cerca del mejor)
+pero es la **peor** opcion razonable para malla grande — `static` (chunk
+default) le saca **2.5x** en n=700 (54.47 vs 21.93). `guided` (sin chunk
+fijo) es lo mejor en malla chica (96.80) pero se degrada fuerte con malla
+grande, y ponerle un chunk fijo a `guided` (`guided,16`) lo empeora todavia
+mas en malla grande (3.43, el peor numero de toda la tabla) — fijar un
+chunk chico en un schedule pensado para chunks decrecientes parece
+contraproducente. No hay un ganador unico: si hubiera que elegir uno para
+todo el rango, `static` (chunk default) es el mas parejo de los dos
+extremos (83.40 / 54.47), mientras que el default actual (`dynamic, 16`)
+es fuerte solo en el extremo chico. Cambiar el codigo real a `static`
+queda como recomendacion, no aplicado en esta rama todavia.
+
+### Paso 6 — flags de build: `-O2` vs `-O3` vs `-O3 -march=native`
+
+Sobre el mismo codigo (identico a `04-schedule-tuning`), se compilo 3
+veces cambiando solo el flag de optimizacion, y se corrio la fila default
+(B6, n=256/f=6) y una fila de malla grande (I12, n=700/f=12), 20 hilos:
+
+| Build | FPS n=256,f=6 | FPS n=700,f=12 |
+|---|---|---|
+| `-O2` (actual) | 83.74 | 32.18 |
+| `-O3` | 83.16 | 35.72 |
+| `-O3 -march=native` | 84.03 | 35.76 |
+
+En malla chica las 3 dan practicamente lo mismo (diferencia es ruido de
+medicion). En malla grande, `-O3` da **~11%** mas que `-O2` (32.18 →
+35.72), consistente con mas autovectorizacion en los loops calientes del
+solver a esa escala. `-march=native` encima de `-O3` no suma nada mas
+(35.72 vs 35.76, dentro del ruido) — sugiere que el set de instrucciones
+base que GCC ya asume alcanza, o que los loops calientes no se benefician
+de registros vectoriales mas anchos. Recomendacion: cambiar `-O2` a `-O3`
+en el `Makefile` es una ganancia gratis (~11% en malla grande, neutral en
+malla chica) sin tocar nada de codigo; no vale la pena `-march=native`
+salvo que se sepa que el binario solo va a correr en esta misma CPU.
 
 ---
 
@@ -449,7 +576,7 @@ punto donde se crearon daran resultados; las que siguen vacias daran el
 mismo numero que su padre, eso es esperado):
 
 ```bash
-for branch in sequential 01-rb-tree 02-omp-loops 03-omp-solver 04-schedule-tuning 05-collapse-tuning parallel-omp; do
+for branch in sequential 01-rb-tree 02-omp-loops 03-omp-solver 04-schedule-tuning parallel-omp; do
   git checkout "$branch" >/dev/null 2>&1 && make clean >/dev/null && make >/dev/null 2>&1 && \
     printf "%-18s" "$branch" && \
     timeout 20s ./ss -n 256 -f 6 -s 42 2>/dev/null | grep "FPS=" | tail -n +5 \

@@ -1,0 +1,813 @@
+\documentclass[11pt]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[spanish]{babel}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{tikz}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usetikzlibrary{shapes.geometric, arrows.meta, positioning}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=black,
+    citecolor=black,
+    urlcolor=blue,
+    pdftitle={Proyecto 1 - Computacion Paralela y Distribuida},
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{Screensaver de fluidos - OpenMP}
+\fancyhead[R]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\definecolor{termbg}{RGB}{20,20,20}
+\definecolor{termfg}{RGB}{0,255,120}
+\lstdefinestyle{terminal}{
+    backgroundcolor=\color{termbg},
+    basicstyle=\color{termfg}\ttfamily\small,
+    breaklines=true,
+    frame=single,
+    framerule=0pt,
+    xleftmargin=4pt,
+    xrightmargin=4pt,
+}
+\lstdefinestyle{code}{
+    basicstyle=\ttfamily\small,
+    breaklines=true,
+    frame=single,
+    numbers=left,
+    numberstyle=\tiny,
+}
+
+\newcommand{\sectionbreak}{\clearpage}
+
+\begin{document}
+
+% ============================================================
+% CARATULA
+% ============================================================
+\begin{titlepage}
+    \centering
+    \vspace*{1cm}
+
+    {\large Universidad del Valle de Guatemala\par}
+    {\large Facultad de Ingenieria\par}
+    {\large Departamento de Ciencias de la Computacion\par}
+    {\large Computacion Paralela y Distribuida - Seccion 20\par}
+    \vspace{0.3cm}
+    {\large Ing. Sebastian Galindo, Ing. Juan Luis Garcia\par}
+
+    \vspace{3cm}
+
+    {\Huge\bfseries Proyecto \#1\par}
+    \vspace{0.5cm}
+    {\Large Screensaver de fluidos paralelizado con OpenMP\par}
+    \vspace{0.3cm}
+    {\large Simulacion de Navier-Stokes (metodo Stable Fluids) con n-cuerpos\par}
+
+    \vspace{3cm}
+
+    {\large\bfseries Integrantes\par}
+    \vspace{0.3cm}
+    {\large TonitoMC\par}
+    {\large Javier-Espana\par}
+    {\large AngelEsquit\par}
+
+    \vfill
+
+    {\large Guatemala, septiembre de 2026\par}
+\end{titlepage}
+
+\tableofcontents
+\clearpage
+
+% ============================================================
+% INTRODUCCION
+% ============================================================
+\section{Introduccion}
+
+Este informe documenta el desarrollo de un screensaver de fluidos,
+paralelizado con OpenMP. El programa simula un fluido incompresible en 2D
+usando el metodo Stable Fluids de Jos Stam, con fuentes de tinta que se
+mueven por gravedad mutua (n-cuerpos).
+
+El objetivo del proyecto es tomar una version secuencial funcional y
+mejorarla de forma iterativa, midiendo speedup y eficiencia en cada paso.
+Cada paso agrega una sola mejora (algoritmica o de paralelizacion) para que
+su impacto se pueda medir por separado.
+
+% ============================================================
+% ANTECEDENTES
+% ============================================================
+\section{Antecedentes}
+
+OpenMP es una API para programacion paralela de memoria compartida en
+C/C++/Fortran. Funciona mediante directivas de compilador (\texttt{\#pragma
+omp}) que le indican al compilador que partes del codigo se pueden repartir
+entre varios hilos. A diferencia de MPI (memoria distribuida), todos los
+hilos de OpenMP comparten el mismo espacio de memoria, lo cual simplifica
+la programacion pero exige cuidado con condiciones de carrera.
+
+El problema elegido, simulacion de fluidos, es un caso clasico de
+paralelizacion de memoria compartida: la malla se puede dividir en
+regiones, y (con el cuidado correcto de dependencias) cada region se puede
+actualizar en un hilo distinto. El metodo de Stam (\emph{Stable Fluids})
+resuelve las ecuaciones de Navier-Stokes con pasos incondicionalmente
+estables, lo que permite pasos de tiempo grandes sin que la simulacion
+explote numericamente \cite{stam1999}.
+
+Para el movimiento de las fuentes de tinta se implemento un sistema de
+n-cuerpos con gravedad mutua, acelerado con un quadtree Barnes-Hut
+\cite{barneshut1986}, que reduce el costo de $O(n^2)$ a $O(n \log n)$.
+
+% ============================================================
+% CUERPO
+% ============================================================
+\section{Descripcion del problema}
+
+El programa dibuja un lienzo de al menos 640x480 px donde varias fuentes
+de tinta de colores inyectan color y momentum en un campo de velocidad.
+El campo de velocidad se resuelve cada frame (difusion, adveccion,
+proyeccion de Hodge) y arrastra la tinta, generando remolinos. Las fuentes
+mismas se mueven por atraccion gravitacional mutua y rebotan en los bordes
+de la malla.
+
+Parametros configurables por linea de comandos: resolucion de la malla
+(\texttt{-n}), cantidad de fuentes (\texttt{-f}), tamano de ventana
+(\texttt{-W}/\texttt{-H}), semilla aleatoria (\texttt{-s}), viscosidad
+(\texttt{-v}), difusion (\texttt{-d}) y pantalla completa (\texttt{-p}).
+Los valores por defecto y rangos validos estan en la Tabla
+\ref{tab:cli-params}.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lll}
+\toprule
+Flag & Rango & Default \\
+\midrule
+\texttt{-n} & 16 -- 1024 & 256 \\
+\texttt{-f} & 1 -- 256 & 6 \\
+\texttt{-W} & min. 640 & 1920 \\
+\texttt{-H} & min. 480 & 1080 \\
+\texttt{-v} & 0.0 -- 1.0 & 0.0 \\
+\texttt{-d} & 0.0 -- 1.0 & 0.0001 \\
+\bottomrule
+\end{tabular}
+\caption{Parametros de linea de comandos.}
+\label{tab:cli-params}
+\end{table}
+
+\section{Metodologia: PCAM}
+
+Se aplico el metodo PCAM (Particionamiento, Comunicacion, Aglomeracion,
+Mapeo) para decidir que y como paralelizar:
+
+\begin{description}[leftmargin=1.5cm]
+    \item[Particionamiento] La malla de la simulacion se piensa como un
+        conjunto de celdas independientes. Cada operacion por celda
+        (inyeccion de fuente, disipacion, adveccion, proyeccion, render)
+        es, en principio, una tarea separada.
+    \item[Comunicacion] La mayoria de las operaciones solo leen el estado
+        del frame anterior y escriben el nuevo, sin comunicacion entre
+        celdas dentro del mismo paso. La excepcion es el solver de
+        presion/difusion (Gauss-Seidel), que en su forma original lee
+        valores ya actualizados de celdas vecinas en la misma iteracion,
+        creando una dependencia estricta que impide paralelizar
+        directamente.
+    \item[Aglomeracion] En vez de repartir celda por celda (overhead de
+        sincronizacion altisimo), se agrupan filas en bloques (\emph{chunks})
+        que cada hilo procesa de corrido.
+    \item[Mapeo] Los bloques se reparten entre los hilos disponibles via
+        \texttt{\#pragma omp parallel for}, con la politica de reparto
+        (\texttt{schedule}) elegida segun el tamano de la malla (ver
+        Seccion \ref{sec:schedule}).
+\end{description}
+
+\section{Version secuencial}
+
+La version secuencial (rama \texttt{sequential}) sirve de linea base fija
+para medir speedup. Usa Gauss-Seidel fila por fila para el solver y fuerza
+bruta $O(f^2)$ para el n-body. No se modifica nunca despues de completada.
+
+\section{Paralelizacion iterativa}
+
+Siguiendo el espiritu de OpenMP como herramienta iterativa, la
+paralelizacion se hizo en pasos, cada uno en su propia rama, midiendo la
+misma bateria de pruebas despues de cada uno.
+
+\subsection{Paso 1: Barnes-Hut para n-body}
+
+Se reemplazo el calculo de gravedad de fuerza bruta ($O(f^2)$) por un
+quadtree Barnes-Hut ($O(f \log f)$). Este paso es puramente algoritmico,
+sin OpenMP todavia. A las resoluciones de malla probadas, el solver de
+fluidos domina tanto el costo que el cambio no se nota en el FPS total
+(el n-body es una fraccion pequena del trabajo por frame).
+
+\subsection{Paso 2: paralelizar los loops independientes}
+
+Se agrego \texttt{\#pragma omp parallel for} a los sitios donde cada celda
+de salida es independiente: inyeccion de fuentes, disipacion de tinta,
+adveccion, proyeccion de Hodge y render. El solver de presion/difusion
+seguia secuencial. Con 20 hilos, este paso ya da un salto importante de
+FPS (Tabla \ref{tab:master}), pero el techo sigue siendo el solver.
+
+\subsection{Paso 3: red-black Gauss-Seidel}
+\label{sec:redblack}
+
+El cambio mas grande de toda la cadena. El solver de Gauss-Seidel original
+lee y escribe la misma malla en el mismo barrido, celda por celda en
+orden, lo que crea una dependencia secuencial estricta. La solucion es un
+recorrido \emph{red-black}: se divide la malla en un tablero de ajedrez
+por paridad $(i+j) \bmod 2$. Los 4 vecinos de una celda de un color son
+siempre del color opuesto, entonces todas las celdas del mismo color se
+pueden actualizar en paralelo sin pisarse entre si. Cada iteracion pasa a
+ser: actualizar todas las rojas (barrera implicita), actualizar todas las
+negras (barrera implicita).
+
+Este cambio finalmente paraleliza el hotspot principal del programa. El
+resultado es el salto de rendimiento mas grande del proyecto: a la
+configuracion default ($n=256$, $f=6$), el FPS pasa de 25.20 (Paso 2) a
+88.27 (Paso 3), un $3.5\times$ adicional.
+
+\subsection{Paso 4: ajuste de \texttt{schedule}}
+\label{sec:schedule}
+
+Con el hotspot ya paralelo, se probo si el \texttt{schedule(dynamic, 16)}
+usado en todo el codigo era la mejor eleccion. Se cambiaron
+temporalmente los \texttt{\#pragma} a \texttt{schedule(runtime)} (que se
+puede configurar sin recompilar via la variable de entorno
+\texttt{OMP\_SCHEDULE}) y se barrio \texttt{static}, \texttt{dynamic} y
+\texttt{guided} con distintos tamanos de chunk, en malla chica y malla
+grande (Tabla \ref{tab:schedule-sweep}).
+
+El resultado principal: el \texttt{dynamic, 16} usado en todo el codigo es
+buena eleccion en malla chica, pero es la peor opcion razonable en malla
+grande. \texttt{static} (con el chunk por defecto del compilador) le saca
+$2.5\times$ a \texttt{dynamic, 16} en $n=700$ (54.47 vs. 21.93 FPS).
+
+Con este resultado, se aplico \texttt{schedule(static)} de verdad al
+codigo de la rama \texttt{04-schedule-tuning}, reemplazando el
+\texttt{schedule(dynamic, 16)} hardcodeado en todos los sitios del
+catalogo. Al remedir la bateria estandar con el cambio real (no solo con
+\texttt{OMP\_SCHEDULE}), el resultado es un \textbf{tradeoff}, no una
+mejora universal: en malla chica \texttt{static} pierde un poco contra el
+\texttt{dynamic, 16} anterior (B6: 88.27 $\to$ 80.68 FPS, $\sim -8.6\%$),
+pero en malla grande gana fuerte (I6: 28.32 $\to$ 53.47 FPS,
+$\sim +89\%$; C6: 45.79 $\to$ 68.57 FPS, $\sim +50\%$). Ver Tabla
+\ref{tab:master} para los numeros completos.
+
+\subsection{Paso 5: ajuste de \texttt{collapse(2)} (cancelado)}
+
+Se planeo comparar \texttt{collapse(2)} contra paralelizar solo el loop
+externo, para ver el efecto en mallas chicas (menos filas que nucleos
+disponibles). Este paso se cancelo antes de obtener numeros confiables y
+no se incluye en los resultados de este informe.
+
+\subsection{Paso 6: flags de compilacion}
+
+Se probo cambiar el flag de optimizacion del compilador de \texttt{-O2}
+(usado hasta ahora) a \texttt{-O3}, y adicionalmente \texttt{-march=native}
+para autovectorizacion especifica del CPU de la maquina de pruebas. Los
+resultados estan en la Tabla \ref{tab:o3}.
+
+\texttt{-O3} da una ganancia real de $\sim$11\% en malla grande sobre
+\texttt{-O2}, sin costo en malla chica. \texttt{-march=native} no aporta
+nada adicional sobre \texttt{-O3} solo, lo que sugiere que los loops
+calientes no se benefician de registros vectoriales mas anchos en este
+CPU, o que el set de instrucciones base que asume GCC ya alcanza.
+
+\section{Mecanismos de sincronizacion}
+
+\begin{itemize}
+    \item \textbf{\texttt{\#pragma omp parallel for}}: la forma principal
+        de paralelismo en el proyecto. Reparte las iteraciones de un loop
+        \texttt{for} entre los hilos disponibles, con una barrera
+        implicita al final (todos los hilos esperan a que termine el
+        ultimo antes de seguir).
+    \item \textbf{\texttt{\#pragma omp parallel} + \texttt{\#pragma omp
+        for}}: usado en el solver (Seccion \ref{sec:redblack}) para abrir
+        una sola region paralela que envuelve las 20 iteraciones del
+        Gauss-Seidel red-black, en vez de abrir/cerrar el team de hilos 40
+        veces por frame (costo fijo de creacion de hilos evitado).
+    \item \textbf{\texttt{\#pragma omp single}}: dentro de la region
+        paralela del solver, aplica la condicion de frontera con un solo
+        hilo mientras el resto espera en la barrera implicita del
+        \texttt{single}, evitando que varios hilos escriban la misma
+        celda de borde a la vez.
+    \item \textbf{\texttt{schedule(dynamic, chunk)}}: politica de reparto
+        de trabajo por defecto usada en todo el codigo. Reparte bloques
+        de \texttt{chunk} iteraciones bajo demanda: un hilo que termina su
+        bloque pide el siguiente en vez de quedarse ocioso esperando a
+        los demas. La Seccion \ref{sec:schedule} muestra que no siempre es
+        la mejor opcion.
+    \item \textbf{\texttt{collapse(2)}}: en los loops anidados de
+        adveccion, proyeccion y render, funde las dos dimensiones (fila,
+        columna) en un solo rango repartible. Sin esto, una malla mas
+        angosta que la cantidad de hilos dejaria nucleos sin trabajo.
+    \item \textbf{Variables privadas (\texttt{private(...)})}: cada hilo
+        necesita su propia copia de las variables escalares temporales
+        del cuerpo del loop (por ejemplo, coordenadas de origen
+        interpoladas en adveccion). Sin esto, los hilos pisarian el mismo
+        valor compartido y corromperian el resultado.
+\end{itemize}
+
+No se usaron mutex ni secciones criticas explicitas: el diseno evita
+condiciones de carrera por construccion (cada celda de salida se escribe
+una sola vez, por un solo hilo, en cada paso), asi que las barreras
+implicitas de \texttt{omp for} y el \texttt{single} para la frontera son
+suficientes.
+
+\section{Resultados}
+
+\subsection{Tabla maestra}
+
+La Tabla \ref{tab:master} muestra el FPS promedio por configuracion (malla
+$\times$ fuentes), en cada paso de la cadena, con 20 hilos donde aplica.
+Metodologia: cada fila se corrio con semilla fija (\texttt{-s 42}), se
+promedio el FPS ignorando las primeras lineas de calentamiento.
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{lrrrrr}
+\toprule
+Fila & \texttt{sequential} & \texttt{01-rb-tree} & \texttt{02-omp-loops} & \texttt{03-omp-solver} & \texttt{04-schedule} \\
+& & & & (\texttt{dynamic,16}) & (\texttt{static}) \\
+\midrule
+A6 (n=64, f=6)    & 17.21 & 17.19 & 118.40 & 88.04 & 83.87 \\
+A12 (n=64, f=12)  & 17.16 & 17.20 & 117.43 & 88.31 & 84.39 \\
+B6 (n=256, f=6)   & 10.52 & 10.51 & 25.20  & 88.27 & 80.68 \\
+B12 (n=256, f=12) & 10.95 & 10.95 & 25.24  & 88.66 & 80.92 \\
+C6 (n=512, f=6)   & 3.75  & 3.76  & 6.72   & 45.79 & 68.57 \\
+C12 (n=512, f=12) & 4.30  & 4.30  & 6.89   & 52.33 & 69.53 \\
+H6 (n=600, f=6)   & 2.69  & 2.69  & 4.46   & 33.72 & 61.41 \\
+H12 (n=600, f=12) & 3.09  & 3.09  & 4.79   & 41.39 & 62.29 \\
+I6 (n=700, f=6)   & 1.90  & 1.91  & 3.00   & 28.32 & 53.47 \\
+I12 (n=700, f=12) & 2.10  & 2.10  & 3.21   & 35.57 & 54.76 \\
+D6 (n=1024, f=6)  & 0.92  & 0.92  & 1.15   & 5.10  & 4.64  \\
+D12 (n=1024, f=12)& 1.00  & 0.99  & 1.23   & 6.32  & 3.21  \\
+E (n=256, f=4)    & 7.52  & 7.52  & 24.39  & 87.09 & n/m \\
+F (n=256, f=64)   & 11.39 & 11.39 & 25.36  & 87.28 & n/m \\
+G (n=256, f=256)  & 11.37 & 11.38 & 25.30  & 85.07 & n/m \\
+\bottomrule
+\end{tabular}
+\caption{FPS promedio por paso de la cadena de paralelizacion. n/m = no
+medido con el schedule nuevo todavia.}
+\label{tab:master}
+\end{table}
+
+En la configuracion default ($n=256$, $f=6$), el FPS pasa de 10.52
+(secuencial) a 88.27 (Paso 3), un speedup acumulado de $\sim 8.4\times$.
+El Paso 4 (\texttt{static}) es un tradeoff frente a Paso 3: pierde un
+poco en malla chica pero gana fuerte en malla grande (hasta
+$\sim +89\%$ en n=700, Tabla \ref{tab:master}).
+
+\subsection{Escalabilidad por hilos}
+
+La Tabla \ref{tab:threads} muestra el FPS variando \texttt{OMP\_NUM\_THREADS}
+en la fila B (n=256, f=6). Antes del Paso 3 (solver todavia secuencial), el
+escalado se estanca alrededor de $2.6\times$ (techo de Amdahl: el solver
+secuencial limita cuanto puede acelerar el resto). Desde el Paso 3 en
+adelante, con el solver ya paralelo, el escalado sube a $\sim 6\times$.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lrrr}
+\toprule
+Hilos & FPS \texttt{02-omp-loops} & FPS \texttt{03-omp-solver} & FPS \texttt{04-schedule} \\
+\midrule
+1  & 9.95  & 14.72 & 14.72 \\
+2  & 14.94 & 25.39 & 25.52 \\
+4  & 20.33 & 45.94 & 45.91 \\
+8  & 23.57 & 67.84 & 68.27 \\
+16 & 25.52 & 83.27 & 83.66 \\
+20 & 25.57 & 87.76 & 87.72 \\
+\bottomrule
+\end{tabular}
+\caption{FPS vs. cantidad de hilos, fila B (n=256, f=6).}
+\label{tab:threads}
+\end{table}
+
+Tambien se corrio la misma curva en una malla grande (n=700, f=12),
+comparando el \texttt{schedule} actual contra \texttt{static} (el mejor
+encontrado para malla grande, Tabla \ref{tab:threads-700}). Con
+\texttt{static}, 20 hilos da 48.11 FPS contra los 34.59 FPS del
+\texttt{dynamic, 16} actual en la misma fila: +39\% solo cambiando el
+schedule.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lrr}
+\toprule
+Hilos & FPS \texttt{static} & FPS \texttt{dynamic,16} (actual) \\
+\midrule
+1  & 6.82  & -- \\
+2  & 15.25 & -- \\
+4  & 30.58 & -- \\
+8  & 41.02 & -- \\
+16 & 53.80 & -- \\
+20 & 48.11 & 34.59 \\
+\bottomrule
+\end{tabular}
+\caption{FPS vs. hilos en malla grande (n=700, f=12).}
+\label{tab:threads-700}
+\end{table}
+
+Con \texttt{static} el pico esta en 16 hilos, no en 20: a 700 filas, el
+reparto estatico en 20 partes no cae tan parejo como en 16.
+
+\subsection{Barrido de \texttt{schedule}/chunk}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lrr}
+\toprule
+\texttt{OMP\_SCHEDULE} & FPS n=256 & FPS n=700 \\
+\midrule
+\texttt{static} (default)          & 83.40 & \textbf{54.47} \\
+\texttt{static,4}                  & 83.57 & 43.01 \\
+\texttt{static,16}                 & 84.53 & 46.87 \\
+\texttt{static,64}                 & 72.89 & 44.42 \\
+\texttt{dynamic,1}                 & 31.19 & 5.55  \\
+\texttt{dynamic,4}                 & 64.36 & 15.77 \\
+\texttt{dynamic,16} (actual)       & 87.58 & 21.93 \\
+\texttt{dynamic,64}                & 76.88 & 2.02  \\
+\texttt{guided} (default)          & \textbf{96.80} & 49.42 \\
+\texttt{guided,16}                 & 94.71 & 3.43  \\
+\bottomrule
+\end{tabular}
+\caption{Barrido de schedule/chunk, 20 hilos, f=6.}
+\label{tab:schedule-sweep}
+\end{table}
+
+\subsection{Flags de build}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lrr}
+\toprule
+Build & FPS n=256,f=6 & FPS n=700,f=12 \\
+\midrule
+\texttt{-O2} (actual)        & 83.74 & 32.18 \\
+\texttt{-O3}                 & 83.16 & 35.72 \\
+\texttt{-O3 -march=native}   & 84.03 & 35.76 \\
+\bottomrule
+\end{tabular}
+\caption{FPS por flag de optimizacion, 20 hilos.}
+\label{tab:o3}
+\end{table}
+
+% ============================================================
+% CONCLUSIONES Y RECOMENDACIONES
+% ============================================================
+\section{Conclusiones}
+
+\begin{itemize}
+    \item Paralelizar el solver de presion/difusion (red-black
+        Gauss-Seidel) fue, por lejos, el cambio de mayor impacto: FPS
+        default subio de 25.20 a 88.27 ($3.5\times$), y la escalabilidad
+        por hilos paso de $\sim 2.6\times$ a $\sim 6\times$.
+    \item Antes de paralelizar el hotspot real, paralelizar el resto del
+        programa (Paso 2) ayuda, pero el techo de Amdahl limita cuanto se
+        puede ganar mientras el cuello de botella siga secuencial.
+    \item La eleccion de \texttt{schedule} de OpenMP importa mas de lo
+        esperado y no tiene un ganador universal: \texttt{dynamic, 16}
+        era mejor en malla chica, \texttt{static} gana fuerte en malla
+        grande ($2.5\times$ en el barrido, hasta $+89\%$ al aplicarlo de
+        verdad al codigo). Se aplico \texttt{static} a la rama
+        \texttt{04-schedule-tuning}; el resultado real confirma el
+        tradeoff: pierde $\sim$8\% en malla chica para ganar hasta
+        $\sim$89\% en malla grande.
+    \item Cambiar \texttt{-O2} a \texttt{-O3} da una ganancia gratuita de
+        $\sim$11\% en malla grande sin tocar codigo. \texttt{-march=native}
+        no aporta nada extra sobre \texttt{-O3} en este CPU.
+    \item Barnes-Hut para el n-body no se nota en el FPS a las
+        resoluciones probadas porque el solver de fluidos domina el costo
+        total; el algoritmo de n-body es una fraccion pequena del trabajo
+        por frame.
+\end{itemize}
+
+\section{Recomendaciones}
+
+\begin{itemize}
+    \item Ya se aplico \texttt{static} en \texttt{04-schedule-tuning}. Si
+        el uso real del programa favorece mallas chicas ($n \leq 256$),
+        vale la pena reconsiderar, ya que ahi \texttt{dynamic, 16} sigue
+        siendo mejor; para mallas grandes, \texttt{static} es la mejor
+        eleccion medida. Una opcion futura es dejarlo configurable via
+        \texttt{schedule(runtime)} y elegir en base a \texttt{-n} al
+        arrancar.
+    \item Cambiar \texttt{-O2} a \texttt{-O3} en el \texttt{Makefile}: es
+        una ganancia gratuita sin riesgo.
+    \item Retomar el Paso 5 (\texttt{collapse(2)}) con una metodologia mas
+        controlada (por ejemplo, sin renderizado en pantalla completa) si
+        se quiere ese numero para mallas chicas con pocos nucleos.
+    \item Para mallas mayores a $n=1024$ o cantidades de fuentes mayores a
+        256, medir de nuevo: el comportamiento del schedule optimo podria
+        cambiar fuera del rango probado.
+\end{itemize}
+
+% ============================================================
+% BIBLIOGRAFIA
+% ============================================================
+\begin{thebibliography}{9}
+
+\bibitem{stam1999}
+Stam, J. (1999). \emph{Stable Fluids}. En Proceedings of the 26th Annual
+Conference on Computer Graphics and Interactive Techniques (SIGGRAPH '99),
+121-128.
+
+\bibitem{barneshut1986}
+Barnes, J., \& Hut, P. (1986). \emph{A hierarchical $O(N \log N)$
+force-calculation algorithm}. Nature, 324(6096), 446-449.
+
+\bibitem{ompspec}
+OpenMP Architecture Review Board. (2021). \emph{OpenMP Application
+Programming Interface, Version 5.2}.
+\url{https://www.openmp.org/specifications/}
+
+\bibitem{chapman2007}
+Chapman, B., Jost, G., \& Van Der Pas, R. (2007). \emph{Using OpenMP:
+Portable Shared Memory Parallel Programming}. MIT Press.
+
+\end{thebibliography}
+
+% ============================================================
+% ANEXO 1: DIAGRAMA DE FLUJO
+% ============================================================
+\clearpage
+\appendix
+\section{Anexo 1: Diagrama de flujo del programa}
+
+\begin{center}
+\resizebox{!}{0.83\textheight}{%
+\begin{tikzpicture}[
+    node distance=0.9cm and 1.5cm,
+    box/.style={rectangle, draw, rounded corners, minimum width=4.2cm, minimum height=0.9cm, align=center, font=\small},
+    decision/.style={diamond, draw, aspect=2.5, minimum width=3.6cm, align=center, font=\small},
+    par/.style={rectangle, draw, rounded corners, minimum width=4.2cm, minimum height=0.9cm, align=center, font=\small, fill=blue!12},
+    arr/.style={-{Stealth[length=2mm]}}
+]
+
+\node[box] (start) {Inicio};
+\node[box, below=of start] (args) {Captura de argumentos\\(\texttt{parse\_arguments})};
+\node[decision, below=of args] (argsok) {\textcolor{black}{args validos?}};
+\node[box, right=of argsok] (argserr) {Imprime error /\\ayuda y termina};
+\node[box, below=of argsok] (alloc) {Programacion defensiva:\\reserva de memoria\\(\texttt{allocate\_fields}, malloc)};
+\node[decision, below=of alloc] (allocok) {memoria OK?};
+\node[box, right=of allocok] (allocerr) {Libera lo reservado\\y termina};
+\node[box, below=of allocok] (sdl) {Inicializa SDL,\\ventana, renderer};
+\node[box, below=of sdl] (loop) {Bucle principal\\(por frame)};
+
+\node[par, below=of loop] (nbody) {Mueve fuentes (n-body,\\Barnes-Hut)};
+\node[par, below=of nbody] (inject) {Inyecta tinta/fuerza\\(\texttt{inject\_sources})};
+\node[par, below=of inject] (vel) {Resuelve velocidad\\(seccion paralela:\\difusion + proyeccion,\\red-black Gauss-Seidel)};
+\node[par, below=of vel] (advect) {Advecta tinta\\(\texttt{collapse(2)})};
+\node[par, below=of advect] (dissip) {Disipa tinta};
+\node[par, below=of dissip] (render) {Renderiza frame\\(\texttt{collapse(2)})};
+\node[box, below=of render] (fps) {Mide y despliega FPS};
+\node[decision, below=of fps] (quit) {ESC/Q o\\cerrar ventana?};
+\node[box, right=of quit] (cleanup) {Libera memoria,\\destruye ventana,\\termina};
+
+\draw[arr] (start) -- (args);
+\draw[arr] (args) -- (argsok);
+\draw[arr] (argsok) -- node[left]{no} (argserr);
+\draw[arr] (argsok) -- node[right]{si} (alloc);
+\draw[arr] (alloc) -- (allocok);
+\draw[arr] (allocok) -- node[left]{no} (allocerr);
+\draw[arr] (allocok) -- node[right]{si} (sdl);
+\draw[arr] (sdl) -- (loop);
+\draw[arr] (loop) -- (nbody);
+\draw[arr] (nbody) -- (inject);
+\draw[arr] (inject) -- (vel);
+\draw[arr] (vel) -- (advect);
+\draw[arr] (advect) -- (dissip);
+\draw[arr] (dissip) -- (render);
+\draw[arr] (render) -- (fps);
+\draw[arr] (fps) -- (quit);
+\draw[arr] (quit) -- node[right]{si} (cleanup);
+\draw[arr] (quit.west) to[out=180,in=180] node[left]{no, siguiente frame} (loop.west);
+
+\end{tikzpicture}%
+}
+\end{center}
+
+Los bloques en azul son las secciones paralelizadas con OpenMP. La
+sincronizacion entre ellas es implicita: cada \texttt{\#pragma omp for}
+tiene una barrera al final, y la seccion de velocidad usa
+\texttt{\#pragma omp single} para la condicion de frontera dentro de su
+propia region paralela (ver Seccion \ref{sec:redblack}).
+
+% ============================================================
+% ANEXO 2: CATALOGO DE FUNCIONES
+% ============================================================
+\clearpage
+\section{Anexo 2: Catalogo de funciones}
+
+\subsection*{\texttt{config.c}}
+\begin{longtable}{p{3.2cm}p{4.5cm}p{2.5cm}p{4cm}}
+\toprule
+Funcion & Entradas & Salidas & Descripcion \\
+\midrule
+\texttt{parse\_arguments} & \texttt{argc} (int), \texttt{argv} (char**) & \texttt{config} (Config*, por referencia), retorna int (1 ok, 0 error, -1 ayuda) & Recorre \texttt{argv} y llena \texttt{config} con los valores validados. \\
+\texttt{read\_int} & \texttt{text} (char*), rango min/max & \texttt{out} (int*), retorna 1/0 & Convierte texto a int validando formato y rango. \\
+\texttt{read\_float} & \texttt{text} (char*), rango min/max & \texttt{out} (float*), retorna 1/0 & Igual que \texttt{read\_int} pero para float. \\
+\texttt{print\_help} & \texttt{program\_name} (char*) & ninguna (imprime a stdout) & Imprime la pantalla de uso del programa. \\
+\bottomrule
+\end{longtable}
+
+\subsection*{\texttt{fields.c}}
+\begin{longtable}{p{3.2cm}p{4.5cm}p{2.5cm}p{4cm}}
+\toprule
+Funcion & Entradas & Salidas & Descripcion \\
+\midrule
+\texttt{allocate\_fields} & \texttt{fields} (FluidFields*), \texttt{resolution} (int) & retorna int (1 ok, 0 error) & Reserva memoria para los 12 campos de la simulacion (velocidad, tinta, presion, divergencia). \\
+\texttt{free\_fields} & \texttt{fields} (FluidFields*) & ninguna & Libera los 12 campos y pone los punteros en NULL. \\
+\texttt{clear\_fields} & \texttt{fields} (FluidFields*) & ninguna & Pone todos los campos en cero (usado al reiniciar con la tecla R). \\
+\bottomrule
+\end{longtable}
+
+\subsection*{\texttt{sources.c}}
+\begin{longtable}{p{3.2cm}p{4.5cm}p{2.5cm}p{4cm}}
+\toprule
+Funcion & Entradas & Salidas & Descripcion \\
+\midrule
+\texttt{init\_sources} & \texttt{sources} (InkSource*), \texttt{count}, \texttt{resolution} (int) & ninguna & Inicializa posicion, velocidad, masa, color y fuerza de cada fuente. \\
+\texttt{inject\_sources} & \texttt{sources} (InkSource*), \texttt{count} (int), \texttt{fields} (FluidFields*), \texttt{aspect} (float) & ninguna (modifica \texttt{fields}) & Deposita tinta y momentum de cada fuente en un vecindario gaussiano. \\
+\texttt{dissipate\_ink} & \texttt{fields} (FluidFields*) & ninguna & Reduce la tinta de cada celda por un factor fijo (paralelo con \texttt{omp parallel for}). \\
+\bottomrule
+\end{longtable}
+
+\subsection*{\texttt{solver.c}}
+\begin{longtable}{p{3.2cm}p{4.5cm}p{2.5cm}p{4cm}}
+\toprule
+Funcion & Entradas & Salidas & Descripcion \\
+\midrule
+\texttt{apply\_boundary} & \texttt{bnd\_type} (int), \texttt{field} (float*) & ninguna & Aplica condiciones de frontera (rebote en paredes). \\
+\texttt{add\_source} & \texttt{dest}, \texttt{source} (float*), \texttt{dt} (float), \texttt{n} (int) & ninguna & Suma el termino fuente a cada celda (paralelo). \\
+\texttt{relax\_color} & \texttt{field}, \texttt{field\_prev} (float*), \texttt{a}, \texttt{inv\_c} (float), \texttt{parity} (int) & ninguna & Actualiza las celdas de una paridad del tablero red-black (paralelo, dentro de region \texttt{omp parallel}). \\
+\texttt{solve\_linear} & \texttt{bnd\_type} (int), \texttt{field}, \texttt{field\_prev} (float*), \texttt{a}, \texttt{c} (float) & ninguna & Corre las 20 iteraciones de Gauss-Seidel red-black dentro de una sola region paralela. \\
+\texttt{diffuse} & \texttt{bnd\_type} (int), \texttt{field}, \texttt{field\_prev} (float*), \texttt{diff}, \texttt{dt} (float), \texttt{n} (int) & ninguna & Arma los coeficientes y llama a \texttt{solve\_linear} para difusion implicita. \\
+\texttt{advect} & \texttt{bnd\_type} (int), \texttt{field}, \texttt{field\_prev} (float*), \texttt{vel\_x}, \texttt{vel\_y} (float*), \texttt{dt} (float) & ninguna & Adveccion semi-Lagrangiana (paralelo, \texttt{collapse(2)}). \\
+\texttt{project} & \texttt{vel\_x}, \texttt{vel\_y}, \texttt{pressure}, \texttt{divergence} (float*) & ninguna & Proyeccion de Hodge: mide divergencia, resuelve presion, resta el gradiente de la velocidad. \\
+\texttt{swap\_fields} & \texttt{field\_a}, \texttt{field\_b} (float**) & ninguna (intercambia punteros) & Intercambia los punteros de dos buffers de campo. \\
+\texttt{ink\_step} & \texttt{ink}, \texttt{ink\_prev} (float**), \texttt{vel\_x}, \texttt{vel\_y} (float*), \texttt{diff}, \texttt{dt} (float), \texttt{n} (int) & ninguna & Un paso completo (difusion + adveccion) para un canal de tinta. \\
+\texttt{velocity\_step} & \texttt{fields} (FluidFields*), \texttt{viscosity}, \texttt{dt} (float) & ninguna & Un paso completo de velocidad: fuerza, difusion, proyeccion, autoadveccion, proyeccion. \\
+\bottomrule
+\end{longtable}
+
+\subsection*{\texttt{nbody.c}}
+\begin{longtable}{p{3.2cm}p{4.5cm}p{2.5cm}p{4cm}}
+\toprule
+Funcion & Entradas & Salidas & Descripcion \\
+\midrule
+\texttt{bh\_new\_node} & \texttt{cx}, \texttt{cy}, \texttt{half} (float) & retorna int (indice del nodo) & Crea un nodo nuevo del quadtree Barnes-Hut. \\
+\texttt{bh\_quadrant} & \texttt{n} (QuadNode*), \texttt{x}, \texttt{y} (float) & retorna int (0-3) & Determina en que cuadrante cae un punto. \\
+\texttt{bh\_subdivide} & \texttt{idx} (int) & ninguna & Crea los 4 hijos de un nodo. \\
+\texttt{bh\_insert} & \texttt{idx}, \texttt{body} (int), \texttt{sources} (InkSource*), \texttt{depth} (int) & ninguna & Inserta una fuente en el arbol recursivamente. \\
+\texttt{bh\_accumulate} & \texttt{idx}, \texttt{body} (int), \texttt{sources} (InkSource*), \texttt{acc\_x}, \texttt{acc\_y} (float*) & ninguna (acumula en \texttt{acc\_x}/\texttt{acc\_y}) & Recorre el arbol acumulando aceleracion gravitacional sobre una fuente. \\
+\texttt{update\_nbody\_sources} & \texttt{sources} (InkSource*), \texttt{count}, \texttt{resolution} (int) & ninguna & Reconstruye el arbol, calcula gravedad, integra posicion/velocidad y aplica rebote en bordes. \\
+\bottomrule
+\end{longtable}
+
+\subsection*{\texttt{render.c}}
+\begin{longtable}{p{3.2cm}p{4.5cm}p{2.5cm}p{4cm}}
+\toprule
+Funcion & Entradas & Salidas & Descripcion \\
+\midrule
+\texttt{sample\_bilinear} & \texttt{field} (float*), \texttt{fx}, \texttt{fy} (float) & retorna float & Interpola bilinealmente un campo en una posicion continua. \\
+\texttt{render\_ink} & \texttt{texture} (SDL\_Texture*), \texttt{fields} (FluidFields*), \texttt{width}, \texttt{height} (int) & ninguna & Vuelca la densidad de tinta a la textura SDL, un pixel a la vez (paralelo, \texttt{collapse(2)}). \\
+\bottomrule
+\end{longtable}
+
+\subsection*{\texttt{background.c}}
+\begin{longtable}{p{3.2cm}p{4.5cm}p{2.5cm}p{4cm}}
+\toprule
+Funcion & Entradas & Salidas & Descripcion \\
+\midrule
+\texttt{init\_background} & \texttt{stars} (Star*), \texttt{count}, \texttt{width}, \texttt{height} (int) & ninguna & Coloca estrellas de fondo en posiciones aleatorias. \\
+\texttt{update\_background} & \texttt{stars} (Star*), \texttt{count} (int) & ninguna & Avanza el parpadeo de cada estrella. \\
+\texttt{draw\_background} & \texttt{renderer} (SDL\_Renderer*), \texttt{stars} (Star*), \texttt{count} (int) & ninguna & Dibuja las estrellas de fondo. \\
+\bottomrule
+\end{longtable}
+
+\subsection*{\texttt{utils.c}}
+\begin{longtable}{p{3.2cm}p{4.5cm}p{2.5cm}p{4cm}}
+\toprule
+Funcion & Entradas & Salidas & Descripcion \\
+\midrule
+\texttt{random\_range} & \texttt{min}, \texttt{max} (float) & retorna float & Numero pseudoaleatorio uniforme en $[min, max]$. \\
+\texttt{clamp} & \texttt{value}, \texttt{min}, \texttt{max} (float) & retorna float & Limita un valor al rango $[min, max]$. \\
+\bottomrule
+\end{longtable}
+
+\subsection*{\texttt{main.c}}
+\begin{longtable}{p{3.2cm}p{4.5cm}p{2.5cm}p{4cm}}
+\toprule
+Funcion & Entradas & Salidas & Descripcion \\
+\midrule
+\texttt{main} & \texttt{argc} (int), \texttt{argv} (char**) & retorna int (codigo de salida) & Punto de entrada: parsea argumentos, inicializa SDL y memoria, corre el bucle principal, libera todo al salir. \\
+\bottomrule
+\end{longtable}
+
+% ============================================================
+% ANEXO 3: BITACORA DE PRUEBAS
+% ============================================================
+\clearpage
+\section{Anexo 3: Bitacora de pruebas}
+
+\subsection*{Metodologia}
+
+Cada configuracion se corrio con semilla fija (\texttt{-s 42}), ignorando
+las primeras lineas de FPS (calentamiento/cache fria), y promediando el
+resto. La bateria estandar (15 configuraciones, Tabla \ref{tab:matrix})
+se repitio identica despues de cada paso de la cadena; son 15 mediciones
+por paso, mas de las 10 minimas requeridas.
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{lrrl}
+\toprule
+Fila & \texttt{-n} & \texttt{-f} & Motivo \\
+\midrule
+A6/A12   & 64   & 6/12  & malla chica, referencia rapida \\
+B6/B12   & 256  & 6/12  & configuracion default \\
+C6/C12   & 512  & 6/12  & malla grande, domina el solver \\
+H6/H12   & 600  & 6/12  & rango de FPS medio observado \\
+I6/I12   & 700  & 6/12  & extremo superior de ese rango \\
+D6/D12   & 1024 & 6/12  & malla muy grande, limite superior \\
+E        & 256  & 4     & pocas fuentes \\
+F        & 256  & 64    & muchas fuentes \\
+G        & 256  & 256   & limite superior de fuentes \\
+\bottomrule
+\end{tabular}
+\caption{Bateria estandar de pruebas (15 configuraciones).}
+\label{tab:matrix}
+\end{table}
+
+Para el barrido de \texttt{schedule} (Tabla \ref{tab:schedule-sweep}) se
+probaron 10 combinaciones de politica/chunk, cada una en 2 tamanos de
+malla: 20 mediciones. Para la escalabilidad por hilos (Tablas
+\ref{tab:threads} y \ref{tab:threads-700}) se probaron 6 cantidades de
+hilos por curva.
+
+\subsection*{Captura de una corrida}
+
+A continuacion, salida real de consola de una corrida de referencia
+($n=256$, $f=6$, semilla 42), mostrando el arranque, calentamiento y
+estabilizacion del FPS:
+
+\begin{lstlisting}[style=terminal]
+Fluid simulation (Navier-Stokes) - SEQUENTIAL version
+  Grid         : 256 x 256 cells (65536 interior cells)
+  Sources      : 6
+  Window       : 1920 x 1080 px
+  Seed         : 42
+  visc / diff  : 0.00000 / 0.00010
+FPS= 12.73
+FPS= 11.41
+FPS= 12.96
+FPS= 13.80
+FPS= 75.53
+FPS= 83.46
+FPS= 83.82
+FPS= 82.31
+FPS= 84.26
+FPS= 85.41
+FPS= 84.09
+FPS= 63.32
+FPS= 74.58
+FPS= 70.27
+FPS= 77.99
+\end{lstlisting}
+
+Nota: la etiqueta "SEQUENTIAL version" en el encabezado es texto residual
+del archivo \texttt{main.c} (no se actualizo al paralelizar); el binario
+usado en esta corrida es la version paralela con OpenMP habilitado (20
+hilos).
+
+\subsection*{Comando usado}
+
+\begin{lstlisting}[style=code]
+timeout 30s ./ss -n <N> -f <F> -s 42 2>/dev/null \
+  | grep "FPS=" | tail -n +6 \
+  | awk -F'= ' '{s+=$2; c++} END {printf "FPS promedio: %.2f\n", s/c}'
+\end{lstlisting}
+
+El resto de las mediciones completas (las 15 filas de la bateria estandar
+por cada paso, el barrido de schedule y las curvas de escalabilidad) estan
+documentadas en \texttt{docs/Roadmap.md} dentro del repositorio del
+proyecto, junto con el historial de commits que muestra cuando se corrio
+cada bateria.
+
+\end{document}
