@@ -220,7 +220,7 @@ vuelve a mergearse a `master` cuando esta terminado y medido.
       y distintos tamanos de chunk sobre el resultado del paso 3, variando
       `-n` (mallas chicas vs. grandes reaccionan distinto al overhead de
       reparto de trabajo).
-- [ ] **Paso 5 — `05-collapse-tuning`**: `collapse(2)` si/no, comparar contra
+- [x] **Paso 5 — `05-collapse-tuning`**: `collapse(2)` si/no, comparar contra
       paralelizar solo el loop externo, especialmente relevante en `-n`
       chico (menos filas que `nproc`).
 - [ ] **Paso 6 (opcional)** — SIMD / autovectorizacion, `-O2` vs `-O3` como
