@@ -1,4 +1,4 @@
-# Fluid Screensaver — Navier-Stokes (sequential version)
+# Fluid Screensaver — Navier-Stokes
 
 Project #1 — Parallel and Distributed Computing, UVG.
 
@@ -8,9 +8,30 @@ Several pseudo-random colored ink sources inject color and momentum; the
 fluid carries them around, generating swirls. The sources themselves move
 under a mutual-gravity n-body system.
 
-This is the **sequential version**, which serves as the comparison baseline
-for measuring speedup and efficiency of the OpenMP parallel version (see
-`docs/Roadmap.md` for the parallelization plan and benchmark results).
+**This branch — `01-rb-tree`**: n-body gravity uses a Barnes-Hut quadtree
+(`O(f log f)`) instead of brute-force pairwise gravity (`O(f²)`). Still
+single-threaded, no OpenMP yet — this is a pure algorithmic step before
+parallelization starts. ~10.51 FPS at the default config (n=256, f=6),
+statistically the same as the `sequential` baseline at this resolution:
+the fluid solver dominates the frame cost so much that the n-body
+algorithm doesn't move the needle yet. See `docs/Roadmap.md` for the full
+benchmark table.
+
+---
+
+## Branch model
+
+This project is built in incremental steps, one branch per step, each
+measured before merging into `master`:
+
+| Branch | What it is |
+|---|---|
+| `sequential` | Frozen baseline: 1 thread, brute-force n-body, row-by-row Gauss-Seidel. Never touched again. |
+| `master` | Integration branch. Always the best working version so far. |
+| `01-rb-tree`, `02-omp-loops`, ... | One step each, branched from `master`, measured, then merged back. |
+| `parallel-omp` | Frozen external reference (pre-roadmap OpenMP version, own legacy CLI). Never merged in. |
+
+Full plan, benchmark methodology and results: `docs/Roadmap.md`.
 
 ---
 
@@ -82,8 +103,7 @@ Produces the `ss` executable (short for "screensaver"). To clean: `make clean`.
 ./ss                          # default configuration
 ./ss -n 192 -f 12             # more resolution and more sources
 ./ss -n 256 -f 8 -s 42        # reproducible with a fixed seed
-./ss -n 128 -v 0.0001 -d 0.00001   # more viscous, more diffuse fluid
-./ss -f 10                     # 10 sources, moving under mutual gravity
+./ss -f 10                    # 10 sources, moving under mutual gravity
 ./ss -p                       # fullscreen at the current resolution
 ```
 
@@ -121,29 +141,18 @@ making the fluid bounce off the walls.
 
 ---
 
-## Note on the parallel phase
+## Parallelization in this branch
 
-`solve_linear` uses Gauss-Seidel, which reads values **already updated
-within the same iteration**. This creates a data dependency between
-neighboring cells and makes the loop **not directly parallelizable** with
-`#pragma omp parallel for` (it would produce race conditions and
-non-deterministic results).
+Still fully single-threaded — no OpenMP directives anywhere in this
+checkout. The only change from `sequential` is the n-body algorithm
+(Barnes-Hut quadtree instead of brute force), which is a pure
+data-structure change, not a parallelization step.
 
-Options for the OpenMP version:
-
-- **Jacobi** — reading from a separate buffer removes the dependencies
-  entirely; trivially parallelizable but converges slower per iteration
-  (may require raising `GAUSS_SEIDEL_ITERS`).
-- **Red-black Gauss-Seidel** — split the grid into "red" and "black" cells
-  like a checkerboard; each half updates in parallel with no internal
-  dependencies, keeping Gauss-Seidel's convergence speed.
-
-The `advect`, `add_source`, `dissipate_ink` operators and the loops inside
-`project` (outside the solver) **are** directly parallelizable, since each
-cell only writes to its own position.
-
-See `docs/Roadmap.md` for the actual step-by-step parallelization plan
-and benchmark results as they're filled in.
+`solve_linear` still uses row-by-row Gauss-Seidel, which reads values
+**already updated within the same iteration**. That data dependency
+between neighboring cells is what blocks a naive `#pragma omp parallel
+for` here — see `docs/Roadmap.md` (Paso 3) for how later branches solve
+it with a red-black checkerboard split.
 
 ---
 
