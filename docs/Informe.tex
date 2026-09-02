@@ -287,8 +287,7 @@ celda $(i, j)$, ese origen es
 \]
 Como $(x_0, y_0)$ casi nunca cae en una celda entera, el valor final se
 obtiene por \textbf{interpolación bilineal} entre las 4 celdas reales
-alrededor de ese punto fraccional (el Anexo 1, bloque 4, tiene el
-detalle línea por línea de esa interpolación). \emph{En código}, cada
+alrededor de ese punto fraccional. \emph{En código}, cada
 celda destino solo lee \texttt{field\_prev}, nunca lo escribe, así que
 el loop es paralelizable sin ningún cuidado extra, con
 \texttt{\#pragma omp parallel for collapse(2)} fundiendo los 2 loops
@@ -784,6 +783,32 @@ Build & FPS n=256,f=6 & FPS n=700,f=6 \\
 (\texttt{schedule(static)} ya aplicado).}
 \label{tab:o3}
 \end{table}
+
+\subsection{Resultado final}
+
+Corrida final de referencia, malla grande y pantalla completa (n=700,
+f=16, 20 hilos para la version paralela):
+
+\begin{table}[ht]
+\centering
+\begin{tabular}{lrrr}
+\toprule
+Version & FPS & Speedup & Eficiencia \\
+\midrule
+Secuencial & --- & 1.00$\times$ & --- \\
+Paralela (20 hilos) & 43.00 & --- & --- \\
+\bottomrule
+\end{tabular}
+\caption{Resultado final, n=700, f=16, pantalla completa.}
+\label{tab:final}
+\end{table}
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=0.8\linewidth]{figs/parallel.png}
+\caption{Version paralela corriendo, n=700, f=16, pantalla completa.}
+\label{fig:parallel}
+\end{figure}
 
 % ============================================================
 % CONCLUSIONES Y RECOMENDACIONES
