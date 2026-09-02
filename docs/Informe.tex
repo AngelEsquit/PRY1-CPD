@@ -2,8 +2,9 @@
 
 \usepackage[utf8]{inputenc}
 \usepackage[spanish]{babel}
-\usepackage[margin=2.5cm]{geometry}
+\usepackage[margin=2.5cm,headheight=14pt]{geometry}
 \usepackage{graphicx}
+\usepackage{microtype}
 \usepackage{booktabs}
 \usepackage{longtable}
 \usepackage{tikz}
@@ -14,6 +15,11 @@
 \usepackage{titlesec}
 \usepackage{enumitem}
 \usetikzlibrary{shapes.geometric, arrows.meta, positioning}
+
+\usepackage{array}
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\sloppy
+\emergencystretch=3em
 
 \hypersetup{
     colorlinks=true,
@@ -62,7 +68,6 @@
     {\large Departamento de Ciencias de la Computacion\par}
     {\large Computacion Paralela y Distribuida - Seccion 20\par}
     \vspace{0.3cm}
-    {\large Ing. Sebastian Galindo, Ing. Juan Luis Garcia\par}
 
     \vspace{3cm}
 
@@ -713,7 +718,7 @@ instrumentacion.
 \section{Anexo 2: Catalogo de funciones}
 
 \subsection*{\texttt{config.c}}
-\begin{longtable}{p{3.2cm}p{4.5cm}p{2.5cm}p{4cm}}
+\begin{longtable}{L{4cm}L{4.1cm}L{2.2cm}L{3.7cm}}
 \toprule
 Funcion & Entradas & Salidas & Descripcion \\
 \midrule
@@ -725,7 +730,7 @@ Funcion & Entradas & Salidas & Descripcion \\
 \end{longtable}
 
 \subsection*{\texttt{fields.c}}
-\begin{longtable}{p{3.2cm}p{4.5cm}p{2.5cm}p{4cm}}
+\begin{longtable}{L{4cm}L{4.1cm}L{2.2cm}L{3.7cm}}
 \toprule
 Funcion & Entradas & Salidas & Descripcion \\
 \midrule
@@ -736,7 +741,7 @@ Funcion & Entradas & Salidas & Descripcion \\
 \end{longtable}
 
 \subsection*{\texttt{sources.c}}
-\begin{longtable}{p{3.2cm}p{4.5cm}p{2.5cm}p{4cm}}
+\begin{longtable}{L{4cm}L{4.1cm}L{2.2cm}L{3.7cm}}
 \toprule
 Funcion & Entradas & Salidas & Descripcion \\
 \midrule
@@ -747,7 +752,7 @@ Funcion & Entradas & Salidas & Descripcion \\
 \end{longtable}
 
 \subsection*{\texttt{solver.c}}
-\begin{longtable}{p{3.2cm}p{4.5cm}p{2.5cm}p{4cm}}
+\begin{longtable}{L{4cm}L{4.1cm}L{2.2cm}L{3.7cm}}
 \toprule
 Funcion & Entradas & Salidas & Descripcion \\
 \midrule
@@ -765,7 +770,7 @@ Funcion & Entradas & Salidas & Descripcion \\
 \end{longtable}
 
 \subsection*{\texttt{nbody.c}}
-\begin{longtable}{p{3.2cm}p{4.5cm}p{2.5cm}p{4cm}}
+\begin{longtable}{L{4cm}L{4.1cm}L{2.2cm}L{3.7cm}}
 \toprule
 Funcion & Entradas & Salidas & Descripcion \\
 \midrule
@@ -779,7 +784,7 @@ Funcion & Entradas & Salidas & Descripcion \\
 \end{longtable}
 
 \subsection*{\texttt{render.c}}
-\begin{longtable}{p{3.2cm}p{4.5cm}p{2.5cm}p{4cm}}
+\begin{longtable}{L{4cm}L{4.1cm}L{2.2cm}L{3.7cm}}
 \toprule
 Funcion & Entradas & Salidas & Descripcion \\
 \midrule
@@ -789,7 +794,7 @@ Funcion & Entradas & Salidas & Descripcion \\
 \end{longtable}
 
 \subsection*{\texttt{background.c}}
-\begin{longtable}{p{3.2cm}p{4.5cm}p{2.5cm}p{4cm}}
+\begin{longtable}{L{4cm}L{4.1cm}L{2.2cm}L{3.7cm}}
 \toprule
 Funcion & Entradas & Salidas & Descripcion \\
 \midrule
@@ -800,7 +805,7 @@ Funcion & Entradas & Salidas & Descripcion \\
 \end{longtable}
 
 \subsection*{\texttt{utils.c}}
-\begin{longtable}{p{3.2cm}p{4.5cm}p{2.5cm}p{4cm}}
+\begin{longtable}{L{4cm}L{4.1cm}L{2.2cm}L{3.7cm}}
 \toprule
 Funcion & Entradas & Salidas & Descripcion \\
 \midrule
@@ -810,7 +815,7 @@ Funcion & Entradas & Salidas & Descripcion \\
 \end{longtable}
 
 \subsection*{\texttt{main.c}}
-\begin{longtable}{p{3.2cm}p{4.5cm}p{2.5cm}p{4cm}}
+\begin{longtable}{L{4cm}L{4.1cm}L{2.2cm}L{3.7cm}}
 \toprule
 Funcion & Entradas & Salidas & Descripcion \\
 \midrule
