@@ -18,7 +18,6 @@
 
 \usepackage{array}
 \newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
-\sloppy
 \emergencystretch=3em
 
 \hypersetup{
@@ -81,13 +80,13 @@
 
     {\large\bfseries Integrantes\par}
     \vspace{0.3cm}
-    {\large TonitoMC\par}
-    {\large Javier-Espana\par}
-    {\large AngelEsquit\par}
+    {\large José Antonio Mérida Castejón\par}
+    {\large Javier Eduardo España Pacheco\par}
+    {\large Angel Esteban Esquit Hernández\par}
 
     \vfill
 
-    {\large Guatemala, septiembre de 2026\par}
+    {\large Guatemala, 2 de septiembre de 2026\par}
 \end{titlepage}
 
 \tableofcontents
@@ -151,7 +150,7 @@ Parametros configurables por linea de comandos: resolucion de la malla
 Los valores por defecto y rangos validos estan en la Tabla
 \ref{tab:cli-params}.
 
-\begin{table}[h]
+\begin{table}[ht]
 \centering
 \begin{tabular}{lll}
 \toprule
@@ -275,15 +274,17 @@ grande. \texttt{static} (con el chunk por defecto del compilador) le saca
 $2.5\times$ a \texttt{dynamic, 16} en $n=700$ (54.47 vs. 21.93 FPS).
 
 Con este resultado, se aplico \texttt{schedule(static)} de verdad al
-codigo de la rama \texttt{04-schedule-tuning}, reemplazando el
-\texttt{schedule(dynamic, 16)} hardcodeado en todos los sitios del
-catalogo. Al remedir la bateria estandar con el cambio real (no solo con
+codigo de la rama \texttt{04-\allowbreak schedule-\allowbreak tuning},
+reemplazando el \texttt{schedule(dynamic,\allowbreak\ 16)} hardcodeado en
+todos los sitios del catalogo.
+
+Al remedir la bateria estandar con el cambio real (no solo con
 \texttt{OMP\_SCHEDULE}), el resultado es un \textbf{tradeoff}, no una
-mejora universal: en malla chica \texttt{static} pierde un poco contra el
-\texttt{dynamic, 16} anterior (B6: 88.27 $\to$ 80.68 FPS, $\sim -8.6\%$),
-pero en malla grande gana fuerte (I6: 28.32 $\to$ 53.47 FPS,
-$\sim +89\%$; C6: 45.79 $\to$ 68.57 FPS, $\sim +50\%$). Ver Tabla
-\ref{tab:master} para los numeros completos.
+mejora universal. En malla chica \texttt{static} pierde un poco contra el
+\texttt{dynamic, 16} anterior: la fila B6 baja de 88.27 a 80.68 FPS,
+alrededor de un 8.6\% menos. En malla grande, en cambio, gana fuerte: la
+fila I6 sube de 28.32 a 53.47 FPS (casi el doble) y la fila C6 sube de
+45.79 a 68.57 FPS. Ver Tabla \ref{tab:master} para los numeros completos.
 
 \subsection{Paso 5: ajuste de \texttt{collapse(2)} (cancelado)}
 
@@ -355,7 +356,7 @@ $\times$ fuentes), en cada paso de la cadena, con 20 hilos donde aplica.
 Metodologia: cada fila se corrio con semilla fija (\texttt{-s 42}), se
 promedio el FPS ignorando las primeras lineas de calentamiento.
 
-\begin{table}[h]
+\begin{table}[ht]
 \centering
 \small
 \begin{tabular}{lrrrrr}
@@ -399,7 +400,7 @@ escalado se estanca alrededor de $2.6\times$ (techo de Amdahl: el solver
 secuencial limita cuanto puede acelerar el resto). Desde el Paso 3 en
 adelante, con el solver ya paralelo, el escalado sube a $\sim 6\times$.
 
-\begin{table}[h]
+\begin{table}[ht]
 \centering
 \begin{tabular}{lrrr}
 \toprule
@@ -424,7 +425,7 @@ encontrado para malla grande, Tabla \ref{tab:threads-700}). Con
 \texttt{dynamic, 16} actual en la misma fila: +39\% solo cambiando el
 schedule.
 
-\begin{table}[h]
+\begin{table}[ht]
 \centering
 \begin{tabular}{lrr}
 \toprule
@@ -447,7 +448,7 @@ reparto estatico en 20 partes no cae tan parejo como en 16.
 
 \subsection{Barrido de \texttt{schedule}/chunk}
 
-\begin{table}[h]
+\begin{table}[ht]
 \centering
 \begin{tabular}{lrr}
 \toprule
@@ -471,7 +472,7 @@ reparto estatico en 20 partes no cae tan parejo como en 16.
 
 \subsection{Flags de build}
 
-\begin{table}[h]
+\begin{table}[ht]
 \centering
 \begin{tabular}{lrr}
 \toprule
@@ -778,7 +779,7 @@ Funcion & Entradas & Salidas & Descripcion \\
 \texttt{bh\_quadrant} & \texttt{n} (QuadNode*), \texttt{x}, \texttt{y} (float) & retorna int (0-3) & Determina en que cuadrante cae un punto. \\
 \texttt{bh\_subdivide} & \texttt{idx} (int) & ninguna & Crea los 4 hijos de un nodo. \\
 \texttt{bh\_insert} & \texttt{idx}, \texttt{body} (int), \texttt{sources} (InkSource*), \texttt{depth} (int) & ninguna & Inserta una fuente en el arbol recursivamente. \\
-\texttt{bh\_accumulate} & \texttt{idx}, \texttt{body} (int), \texttt{sources} (InkSource*), \texttt{acc\_x}, \texttt{acc\_y} (float*) & ninguna (acumula en \texttt{acc\_x}/\texttt{acc\_y}) & Recorre el arbol acumulando aceleracion gravitacional sobre una fuente. \\
+\texttt{bh\_accumulate} & \texttt{idx}, \texttt{body} (int), \texttt{sources} (InkSource*), \texttt{acc\_x}, \texttt{acc\_y} (float*) & ninguna (acumula en \texttt{acc\_x}\allowbreak/\texttt{acc\_y}) & Recorre el arbol acumulando aceleracion gravitacional sobre una fuente. \\
 \texttt{update\_nbody\_sources} & \texttt{sources} (InkSource*), \texttt{count}, \texttt{resolution} (int) & ninguna & Reconstruye el arbol, calcula gravedad, integra posicion/velocidad y aplica rebote en bordes. \\
 \bottomrule
 \end{longtable}
@@ -837,7 +838,7 @@ resto. La bateria estandar (15 configuraciones, Tabla \ref{tab:matrix})
 se repitio identica despues de cada paso de la cadena; son 15 mediciones
 por paso, mas de las 10 minimas requeridas.
 
-\begin{table}[h]
+\begin{table}[ht]
 \centering
 \small
 \begin{tabular}{lrrl}
