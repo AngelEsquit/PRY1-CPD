@@ -48,8 +48,6 @@
     numberstyle=\tiny,
 }
 
-\newcommand{\sectionbreak}{\clearpage}
-
 \begin{document}
 
 % ============================================================
@@ -195,8 +193,25 @@ Mapeo) para decidir que y como paralelizar:
 \section{Version secuencial}
 
 La version secuencial (rama \texttt{sequential}) sirve de linea base fija
-para medir speedup. Usa Gauss-Seidel fila por fila para el solver y fuerza
-bruta $O(f^2)$ para el n-body. No se modifica nunca despues de completada.
+para medir speedup: una vez medida, no se vuelve a tocar, ni un commit
+mas, para que el punto de comparacion no se mueva mientras se paraleliza.
+
+Usa Gauss-Seidel fila por fila para el solver de presion/difusion y
+fuerza bruta $O(f^2)$ para la gravedad del n-body (sin quadtree, cada
+fuente contra cada otra fuente). El resto de la estructura del programa
+(parseo de argumentos, asignacion de memoria, bucle principal, limpieza al
+salir) es identica a las versiones paralelas — los pasos del roadmap solo
+tocan el algoritmo del solver y el n-body, no la estructura general.
+
+Antes de arrancar cualquier paralelizacion, esta version se probo:
+compila limpio con \texttt{-Wall -Wextra -O2 -std=c11}, corre sin
+crashear para el rango completo de \texttt{-n} y \texttt{-f}, y
+\texttt{valgrind --leak-check=full} reporta 0 bytes perdidos y 0 errores
+(la limpieza al salir libera los 12 campos de la simulacion, las fuentes
+y las estrellas de fondo, ver \texttt{cleanup:} en \texttt{main.c}).
+Tambien se probo el parseo de argumentos con entradas invalidas
+(no numericas, fuera de rango, valores faltantes, flags desconocidos) —
+ver Anexo 2 para el detalle de \texttt{read\_int}/\texttt{read\_float}.
 
 \section{Paralelizacion iterativa}
 
@@ -606,6 +621,90 @@ sincronizacion entre ellas es implicita: cada \texttt{\#pragma omp for}
 tiene una barrera al final, y la seccion de velocidad usa
 \texttt{\#pragma omp single} para la condicion de frontera dentro de su
 propia region paralela (ver Seccion \ref{sec:redblack}).
+
+\subsection*{Que pasa dentro de cada bloque, un frame a la vez}
+
+El diagrama de arriba muestra el orden, pero no el detalle de cada
+bloque. Esta seccion entra a ese detalle, bloque por bloque, en el orden
+real de ejecucion dentro de \texttt{main.c}.
+
+\paragraph{1. Mueve fuentes (n-body, Barnes-Hut) — \texttt{update\_nbody\_sources}.}
+Reconstruye un quadtree desde cero cada frame (las fuentes se mueven, no
+tiene sentido mantenerlo entre frames). Primero inserta las $f$ fuentes
+una por una (\texttt{bh\_insert}, recursivo, subdivide un nodo hoja en 4
+cuando cae una segunda fuente adentro). Despues, para cada fuente,
+recorre el arbol (\texttt{bh\_accumulate}): si un nodo esta lo bastante
+lejos en relacion a su tamano ($\theta = 0.5$), se trata como un solo
+punto de masa en vez de bajar a sus 4 hijos — eso es lo que baja el costo
+de $O(f^2)$ a $O(f \log f)$. Con la aceleracion acumulada, integra
+velocidad y posicion, y aplica un rebote amortiguado si una fuente
+llegaria a salir del area valida de inyeccion. Esta etapa sigue
+secuencial en toda la cadena: el arbol se construye una vez por frame y
+depende del resultado del frame anterior en cada insercion, no vale la
+pena paralelizarla a la cantidad de fuentes que se usan tipicamente
+($f \leq 256$).
+
+\paragraph{2. Inyecta tinta/fuerza — \texttt{inject\_sources}.}
+Primero limpia los buffers "previous" de velocidad y tinta (van a
+recibirse de nuevo este frame). Para cada fuente, calcula dos gaussianas
+centradas en su posicion (continua, no la celda entera): una ancha que
+da el color/empuje general, y una angosta ("core") que agrega un nucleo
+brillante casi blanco en el centro. La direccion del chorro rota con
+\texttt{cos(phase)}/\texttt{sin(phase)}, generando el efecto espiral. No
+esta paralelizada: el radio de inyeccion por fuente es chico (unas pocas
+celdas) y varias fuentes pueden solapar en la misma celda si estan cerca,
+lo que forzaria una seccion critica o reduccion — no vale la pena al
+tamano tipico de \texttt{-f}.
+
+\paragraph{3. Resuelve velocidad — \texttt{velocity\_step}.}
+El bloque mas caro del frame, y donde vive el paralelismo real. Es una
+secuencia fija: fuerza $\to$ difusion $\to$ proyeccion $\to$
+autoadveccion $\to$ proyeccion otra vez (difundir y autoadvectar cada uno
+reintroduce algo de divergencia, por eso se proyecta dos veces). La
+difusion y cada proyeccion llaman a \texttt{solve\_linear}, que abre
+\emph{una sola} region \texttt{\#pragma omp parallel} y adentro corre las
+20 iteraciones de Gauss-Seidel red-black: 20 veces (actualizar celdas
+rojas, barrera implicita, actualizar celdas negras, barrera implicita).
+Abrir la region paralela una sola vez en vez de 40 veces (20 iteraciones
+$\times$ 2 colores) evita el costo fijo de crear el team de hilos
+repetidamente, que en mallas chicas se nota. La condicion de frontera se
+aplica con \texttt{\#pragma omp single} dentro de esa misma region: un
+solo hilo la escribe mientras los demas esperan en la barrera implicita
+del \texttt{single}, sin salir de la region paralela.
+
+\paragraph{4. Advecta tinta — \texttt{ink\_step} (una vez por canal R, G, B).}
+Adveccion semi-Lagrangiana: para cada celda destino, calcula de donde
+vino ese fluido dando un paso hacia atras a lo largo de su propio campo
+de velocidad, y agarra el valor de ahi por interpolacion bilineal de las
+4 celdas reales alrededor de ese punto (fraccional). Cada celda destino
+solo lee el campo anterior, nunca lo escribe, asi que es paralelizable
+sin ningun cuidado extra. Usa \texttt{\#pragma omp parallel for
+collapse(2)}: funde el loop de \texttt{i} y el de \texttt{j} en un solo
+rango repartible, para que una malla angosta (menos filas que hilos)
+siga repartiendo trabajo entre todos. Se llama 3 veces (una por canal de
+color), cada una independiente de las otras.
+
+\paragraph{5. Disipa tinta — \texttt{dissipate\_ink}.}
+Multiplica cada celda de cada canal por \texttt{DISSIPATION} (0.995), sin
+eso la tinta se acumularia hasta saturar la pantalla a blanco. Loop plano
+sobre \texttt{celdas\_totales}, cada celda independiente,
+\texttt{\#pragma omp parallel for}.
+
+\paragraph{6. Renderiza frame — \texttt{render\_ink}.}
+Recorre cada pixel de la textura (no cada celda de la malla — la
+resolucion de ventana suele ser mayor que \texttt{-n}), interpola
+bilinealmente la densidad de tinta en esa posicion, aplica un mapeo de
+tono estilo Reinhard y un ajuste de saturacion, y calcula el canal alfa a
+partir del brillo maximo de los 3 canales (para que el fondo se vea donde
+no hay tinta). Tambien usa \texttt{collapse(2)}: sin el, con una ventana
+mas angosta que alta (o viceversa) los hilos no se repartirian parejo
+solo sobre el loop externo.
+
+\paragraph{7. Mide FPS y actualiza pantalla.}
+Cuenta frames acumulados y, cada $\sim$0.5s de tiempo real, calcula el
+promedio, lo imprime a \texttt{stdout} y lo pone en el titulo de la
+ventana. No es parte del calculo de la simulacion, es solo
+instrumentacion.
 
 % ============================================================
 % ANEXO 2: CATALOGO DE FUNCIONES
