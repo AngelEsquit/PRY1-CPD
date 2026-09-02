@@ -1,4 +1,4 @@
-# Fluid Screensaver — Navier-Stokes (sequential version)
+# Fluid Screensaver — Navier-Stokes
 
 Project #1 — Parallel and Distributed Computing, UVG.
 
@@ -8,9 +8,32 @@ Several pseudo-random colored ink sources inject color and momentum; the
 fluid carries them around, generating swirls. The sources themselves move
 under a mutual-gravity n-body system.
 
-This is the **sequential version**, which serves as the comparison baseline
-for measuring speedup and efficiency of the OpenMP parallel version (see
-`docs/Roadmap.md` for the parallelization plan and benchmark results).
+**This is `master`**: the integration branch, always the best working
+version so far. Currently includes Barnes-Hut n-body (`01-rb-tree`), full
+OpenMP loop parallelization (`02-omp-loops`), a red-black parallel solver
+(`03-omp-solver`), and a `static` OpenMP schedule tuned for large grids
+(`04-schedule-tuning`). Default config (n=256, f=6): ~80.68 FPS at 20
+threads, up from ~10.52 sequential (~7.7x). Large grids (n=700) do even
+better: up to ~54.76 FPS vs. ~2.10 sequential (~26x). Full numbers and
+methodology: `docs/Roadmap.md`. Written project report (UVG format,
+LaTeX): `docs/Informe.tex` / `docs/Informe.pdf`.
+
+---
+
+## Branch model
+
+This project is built in incremental steps, one branch per step, each
+measured before merging into `master`:
+
+| Branch | What it is |
+|---|---|
+| `sequential` | Frozen baseline: 1 thread, brute-force n-body, row-by-row Gauss-Seidel. Never touched again. |
+| `master` | Integration branch (this one). Always the best working version so far. |
+| `01-rb-tree`, `02-omp-loops`, `03-omp-solver`, `04-schedule-tuning` | One step each, already merged in here. |
+| `05-collapse-tuning` | Cancelled before producing reliable numbers, not merged. |
+| `parallel-omp` | Frozen external reference (pre-roadmap OpenMP version, own legacy CLI). Never merged in. |
+
+Full plan, benchmark methodology and results: `docs/Roadmap.md`.
 
 ---
 
@@ -18,7 +41,7 @@ for measuring speedup and efficiency of the OpenMP parallel version (see
 
 - A C compiler with C11 support (`gcc` or `clang`)
 - SDL2 (development library)
-- `make`, `pkg-config`
+- `make`, `pkg-config`, OpenMP support in the compiler (standard in gcc/clang)
 
 ### Installing SDL2
 
@@ -76,14 +99,19 @@ Produces the `ss` executable (short for "screensaver"). To clean: `make clean`.
 | `-p`, `-F` | Fullscreen (exact size of the current screen) | — | off |
 | `-h` | Shows help | — | — |
 
+Control the thread count without recompiling via the standard OpenMP
+environment variable:
+```bash
+OMP_NUM_THREADS=4 ./ss -n 256 -f 6
+```
+
 ### Examples
 
 ```bash
 ./ss                          # default configuration
 ./ss -n 192 -f 12             # more resolution and more sources
 ./ss -n 256 -f 8 -s 42        # reproducible with a fixed seed
-./ss -n 128 -v 0.0001 -d 0.00001   # more viscous, more diffuse fluid
-./ss -f 10                     # 10 sources, moving under mutual gravity
+./ss -f 10                    # 10 sources, moving under mutual gravity
 ./ss -p                       # fullscreen at the current resolution
 ```
 
@@ -121,35 +149,38 @@ making the fluid bounce off the walls.
 
 ---
 
-## Note on the parallel phase
+## Parallelization (current state)
 
-`solve_linear` uses Gauss-Seidel, which reads values **already updated
-within the same iteration**. This creates a data dependency between
-neighboring cells and makes the loop **not directly parallelizable** with
-`#pragma omp parallel for` (it would produce race conditions and
-non-deterministic results).
+Everything is parallel except argument parsing, allocation, and n-body
+(n-body uses a Barnes-Hut quadtree — sequential, but `O(f log f)` instead
+of `O(f²)`):
 
-Options for the OpenMP version:
+- **Source injection, ink dissipation** — `#pragma omp parallel for`, each
+  cell independent.
+- **Pressure/diffusion solver** — red-black Gauss-Seidel: the grid is
+  split into a checkerboard by parity `(i+j) % 2`, so all cells of one
+  color update in parallel with zero dependencies between them. The whole
+  20-iteration loop runs inside one `#pragma omp parallel` region (avoids
+  the fixed cost of opening/closing a thread team 40 times a frame), with
+  `#pragma omp single` applying the boundary condition between colors.
+- **Advection, projection, render** — `#pragma omp parallel for
+  collapse(2)`, fusing both loop dimensions so narrow grids still spread
+  work across every thread.
+- **Schedule**: `schedule(static)` everywhere (see
+  `docs/Roadmap.md`, Paso 4, for why — it's a tradeoff, faster on large
+  grids, a bit slower on small ones, versus the `dynamic, 16` used
+  through `03-omp-solver`).
 
-- **Jacobi** — reading from a separate buffer removes the dependencies
-  entirely; trivially parallelizable but converges slower per iteration
-  (may require raising `GAUSS_SEIDEL_ITERS`).
-- **Red-black Gauss-Seidel** — split the grid into "red" and "black" cells
-  like a checkerboard; each half updates in parallel with no internal
-  dependencies, keeping Gauss-Seidel's convergence speed.
-
-The `advect`, `add_source`, `dissipate_ink` operators and the loops inside
-`project` (outside the solver) **are** directly parallelizable, since each
-cell only writes to its own position.
-
-See `docs/Roadmap.md` for the actual step-by-step parallelization plan
-and benchmark results as they're filled in.
+No mutexes or critical sections: the design avoids race conditions by
+construction (every output cell is written exactly once, by exactly one
+thread, in every step), so the implicit barriers of `omp for` plus the
+`single` for the boundary condition are enough.
 
 ---
 
 ## Verification performed
 
-- Compiles without warnings under `-Wall -Wextra -O2 -std=c11`.
+- Compiles without warnings under `-Wall -Wextra -O2 -std=c11 -fopenmp`.
 - Argument validation tested with non-numeric input, out-of-range values,
   missing values, and unknown options.
 - `valgrind --leak-check=full`: 0 bytes lost, 0 errors.
