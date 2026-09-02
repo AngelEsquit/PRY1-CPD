@@ -1,4 +1,4 @@
-# Fluid Screensaver — Navier-Stokes (sequential version)
+# Fluid Screensaver — Navier-Stokes
 
 Project #1 — Parallel and Distributed Computing, UVG.
 
@@ -8,9 +8,29 @@ Several pseudo-random colored ink sources inject color and momentum; the
 fluid carries them around, generating swirls. The sources themselves move
 under a mutual-gravity n-body system.
 
-This is the **sequential version**, which serves as the comparison baseline
-for measuring speedup and efficiency of the OpenMP parallel version (see
-`docs/Roadmap.md` for the parallelization plan and benchmark results).
+**This branch — `05-collapse-tuning`**: was meant to compare `collapse(2)`
+on/off on the advect/project/render loops, especially for small grids
+(fewer rows than threads). **Cancelled before reliable numbers came out**
+— the code here is functionally identical to `03-omp-solver`
+(`schedule(dynamic, 16)`, `collapse(2)` still in place, unchanged). Not
+pursued further; see `docs/Roadmap.md` for what happened. The performance
+work that stuck landed in `04-schedule-tuning` instead.
+
+---
+
+## Branch model
+
+This project is built in incremental steps, one branch per step, each
+measured before merging into `master`:
+
+| Branch | What it is |
+|---|---|
+| `sequential` | Frozen baseline: 1 thread, brute-force n-body, row-by-row Gauss-Seidel. Never touched again. |
+| `master` | Integration branch. Always the best working version so far. |
+| `01-rb-tree`, `02-omp-loops`, ... | One step each, branched from `master`, measured, then merged back. |
+| `parallel-omp` | Frozen external reference (pre-roadmap OpenMP version, own legacy CLI). Never merged in. |
+
+Full plan, benchmark methodology and results: `docs/Roadmap.md`.
 
 ---
 
@@ -18,7 +38,7 @@ for measuring speedup and efficiency of the OpenMP parallel version (see
 
 - A C compiler with C11 support (`gcc` or `clang`)
 - SDL2 (development library)
-- `make`, `pkg-config`
+- `make`, `pkg-config`, OpenMP support in the compiler (standard in gcc/clang)
 
 ### Installing SDL2
 
@@ -76,14 +96,19 @@ Produces the `ss` executable (short for "screensaver"). To clean: `make clean`.
 | `-p`, `-F` | Fullscreen (exact size of the current screen) | — | off |
 | `-h` | Shows help | — | — |
 
+Control the thread count without recompiling via the standard OpenMP
+environment variable:
+```bash
+OMP_NUM_THREADS=4 ./ss -n 256 -f 6
+```
+
 ### Examples
 
 ```bash
 ./ss                          # default configuration
 ./ss -n 192 -f 12             # more resolution and more sources
 ./ss -n 256 -f 8 -s 42        # reproducible with a fixed seed
-./ss -n 128 -v 0.0001 -d 0.00001   # more viscous, more diffuse fluid
-./ss -f 10                     # 10 sources, moving under mutual gravity
+./ss -f 10                    # 10 sources, moving under mutual gravity
 ./ss -p                       # fullscreen at the current resolution
 ```
 
@@ -121,35 +146,20 @@ making the fluid bounce off the walls.
 
 ---
 
-## Note on the parallel phase
+## Parallelization in this branch
 
-`solve_linear` uses Gauss-Seidel, which reads values **already updated
-within the same iteration**. This creates a data dependency between
-neighboring cells and makes the loop **not directly parallelizable** with
-`#pragma omp parallel for` (it would produce race conditions and
-non-deterministic results).
-
-Options for the OpenMP version:
-
-- **Jacobi** — reading from a separate buffer removes the dependencies
-  entirely; trivially parallelizable but converges slower per iteration
-  (may require raising `GAUSS_SEIDEL_ITERS`).
-- **Red-black Gauss-Seidel** — split the grid into "red" and "black" cells
-  like a checkerboard; each half updates in parallel with no internal
-  dependencies, keeping Gauss-Seidel's convergence speed.
-
-The `advect`, `add_source`, `dissipate_ink` operators and the loops inside
-`project` (outside the solver) **are** directly parallelizable, since each
-cell only writes to its own position.
-
-See `docs/Roadmap.md` for the actual step-by-step parallelization plan
-and benchmark results as they're filled in.
+Same as `03-omp-solver`: everything parallel (source injection,
+dissipation, advection, projection, render, red-black solver), all with
+`schedule(dynamic, 16)` and `collapse(2)` on the advect/project/render
+loops. No changes were actually kept on this branch — the planned
+collapse-on/off comparison never produced reliable numbers before being
+cancelled.
 
 ---
 
 ## Verification performed
 
-- Compiles without warnings under `-Wall -Wextra -O2 -std=c11`.
+- Compiles without warnings under `-Wall -Wextra -O2 -std=c11 -fopenmp`.
 - Argument validation tested with non-numeric input, out-of-range values,
   missing values, and unknown options.
 - `valgrind --leak-check=full`: 0 bytes lost, 0 errors.
