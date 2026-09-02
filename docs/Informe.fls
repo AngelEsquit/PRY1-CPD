@@ -1000,6 +1000,14 @@ INPUT ./figs/runcapture.png
 INPUT figs/runcapture.png
 INPUT ./figs/runcapture.png
 INPUT ./figs/runcapture.png
+INPUT ./figs/seq.png
+INPUT ./figs/seq.png
+INPUT figs/seq.png
+INPUT ./figs/seq.png
+INPUT ./figs/parallel.png
+INPUT ./figs/parallel.png
+INPUT figs/parallel.png
+INPUT ./figs/parallel.png
 INPUT /usr/share/texlive/texmf-dist/tex/latex/base/ts1cmtt.fd
 INPUT /usr/share/texlive/texmf-dist/tex/latex/base/ts1cmtt.fd
 INPUT /usr/share/texlive/texmf-dist/tex/latex/base/ts1cmtt.fd

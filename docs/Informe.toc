@@ -22,13 +22,14 @@
 \contentsline {subsection}{\numberline {7.5}Paso 6. Flags de compilacion}{12}{subsection.7.5}%
 \contentsline {section}{\numberline {8}Mecanismos de sincronización}{13}{section.8}%
 \contentsline {section}{\numberline {9}Resultados}{14}{section.9}%
+\contentsline {paragraph}{Disclaimer sobre condiciones de medición.}{14}{section.9}%
 \contentsline {subsection}{\numberline {9.1}Tabla maestra}{14}{subsection.9.1}%
-\contentsline {subsection}{\numberline {9.2}Escalabilidad por hilos}{14}{subsection.9.2}%
-\contentsline {subsection}{\numberline {9.3}Barrido de \texttt {schedule}/chunk}{15}{subsection.9.3}%
+\contentsline {subsection}{\numberline {9.2}Escalabilidad por hilos}{15}{subsection.9.2}%
+\contentsline {subsection}{\numberline {9.3}Barrido de \texttt {schedule}/chunk}{16}{subsection.9.3}%
 \contentsline {subsection}{\numberline {9.4}Flags de build}{16}{subsection.9.4}%
 \contentsline {subsection}{\numberline {9.5}Resultado final}{16}{subsection.9.5}%
-\contentsline {section}{\numberline {10}Conclusiones}{17}{section.10}%
-\contentsline {section}{\numberline {11}Recomendaciones}{18}{section.11}%
-\contentsline {section}{\numberline {A}Anexo 1. Diagrama de flujo del programa}{20}{appendix.Alph1}%
-\contentsline {section}{\numberline {B}Anexo 2. Catálogo de funciones}{21}{appendix.Alph2}%
-\contentsline {section}{\numberline {C}Anexo 3. Bitácora de pruebas}{25}{appendix.Alph3}%
+\contentsline {section}{\numberline {10}Conclusiones}{18}{section.10}%
+\contentsline {section}{\numberline {11}Recomendaciones}{20}{section.11}%
+\contentsline {section}{\numberline {A}Anexo 1. Diagrama de flujo del programa}{22}{appendix.Alph1}%
+\contentsline {section}{\numberline {B}Anexo 2. Catálogo de funciones}{23}{appendix.Alph2}%
+\contentsline {section}{\numberline {C}Anexo 3. Bitácora de pruebas}{27}{appendix.Alph3}%

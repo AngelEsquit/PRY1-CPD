@@ -645,6 +645,26 @@ suficientes.
 
 \section{Resultados}\label{sec:resultados}
 
+\paragraph{Disclaimer sobre condiciones de medición.} Las mediciones no
+se tomaron bajo condiciones 100\% controladas: las distintas baterías
+(tabla maestra, barrido de \texttt{schedule}, curvas de escalabilidad,
+flags de build, resultado final) se corrieron en días distintos, y la
+carga de fondo del sistema (otros procesos, uso de CPU/RAM ajeno al
+programa) pudo variar entre una sesión de medición y otra. El hardware sí
+se mantuvo constante en todas las corridas (mismo \texttt{Intel Core i5
+14600KF}, mismos 20 hilos disponibles). Las comparaciones finas entre números
+de tablas distintas (diferencias de unos pocos FPS o puntos porcentuales)
+deben tomarse como orientativas; las diferencias grandes (varios $\times$
+de speedup, decenas de FPS) sí son confiables, ya que exceden ampliamente
+cualquier variación esperable por carga de fondo.
+
+Además, buena parte del speedup total reportado en este informe no viene
+  únicamente de agregar hilos. El código también cambió algorítmicamente en
+el camino (red-black en vez de Gauss-Seidel fila por fila, Barnes-Hut en
+vez de fuerza bruta $O(f^2)$, ajuste de \texttt{schedule}). Al comparar
+\texttt{sequential} contra \texttt{master}, se está midiendo el efecto
+combinado de ``mejor algoritmo'' + ``más hilos'', no paralelismo puro.
+
 \subsection{Tabla maestra}
 
 La Tabla \ref{tab:master} muestra el FPS promedio por configuración (malla
@@ -683,16 +703,16 @@ medido con el schedule nuevo todavia.}
 \label{tab:master}
 \end{table}
 
-En la configuración default ($n=256$, $f=6$), el FPS pasa de 10.52
+En la configuración default ($n=256$, $f=6$), los FPS pasan de 10.52
 (secuencial) a 88.27 (Paso 3), un speedup acumulado de $\sim 8.4\times$.
-El Paso 4 (\texttt{static}) es un tradeoff frente a Paso 3: pierde un
+El Paso 4 (\texttt{static}) es un tradeoff frente al Paso 3, pierde un
 poco en malla chica pero gana fuerte en malla grande (hasta
 $\sim +89\%$ en n=700, Tabla \ref{tab:master}).
 
-Ese tradeoff se revierte, sin embargo, en la malla más grande de la
-matriz: en D6/D12 ($n=1024$), \texttt{static} queda \emph{peor} que
+Ese tradeoff se revierte, en la malla más grande de la
+matriz. En D6/D12 ($n=1024$), \texttt{static} queda \emph{peor} que
 \texttt{dynamic,16} (5.10 $\to$ 4.64 FPS en D6, y 6.32 $\to$ 3.21 FPS en
-D12, casi $-49\%$). Es la única fila donde Paso 4 pierde contra Paso 3, y
+D12, casi $-49\%$). Es la única fila donde el Paso 4 pierde contra el Paso 3, y
 la caída es demasiado grande para ser ruido de una sola corrida; el
 barrido de \texttt{schedule} en la Sección \ref{sec:resultados} explica
 por qué (desbalance de carga con chunks fijos cuando la malla es muy
@@ -701,19 +721,19 @@ específico para $n \geq 1024$, así que queda como límite conocido del
 Paso 4 más que como algo resuelto.
 
 Las filas E/F/G (n=256, variando fuentes de 4 a 256, un rango de $64\times$)
-también son notables por lo poco que cambian: 7.52, 11.39 y 11.37 FPS en
-secuencial, 87.09, 87.28 y 85.07 en Paso 3 — prácticamente planas pese a
+también son notables por lo poco que cambian entre si. 7.52, 11.39 y 11.37 FPS en
+secuencial, 87.09, 87.28 y 85.07 en el Paso 3, son prácticamente planas pese a
 multiplicar la cantidad de cuerpos por 64. Es la evidencia concreta detrás
-de la conclusión de que Barnes-Hut no se nota en el FPS medido: el solver
+de la conclusión de que Barnes-Hut no se nota en el FPS medido, el solver
 de fluidos domina tan fuerte el costo por frame que ni el cambio
 algorítmico de n-body ($O(f^2) \to O(f\log f)$) ni la variación directa en
-$f$ mueven la aguja a estas resoluciones de malla.
+$f$ mueven afectan estas resoluciones de malla.
 
 \subsection{Escalabilidad por hilos}
 
-La Tabla \ref{tab:threads} muestra el FPS variando \texttt{OMP\_NUM\_THREADS}
+La Tabla \ref{tab:threads} muestra los FPS variando \texttt{OMP\_NUM\_THREADS}
 en la fila B (n=256, f=6). Antes del Paso 3 (solver todavia secuencial), el
-escalado se estanca alrededor de $2.6\times$ (techo de Amdahl, el solver
+escalado se estanca alrededor de $2.6\times$ (el solver
 secuencial limita cuánto puede acelerar el resto). Desde el Paso 3 en
 adelante, con el solver ya paralelo, el escalado sube a $\sim 6\times$.
 
@@ -760,8 +780,8 @@ Hilos & FPS \texttt{static} & FPS \texttt{dynamic,16} (actual) \\
 \label{tab:threads-700}
 \end{table}
 
-Con \texttt{static} el pico está en 16 hilos, no en 20: a 700 filas, el
-reparto estatico en 20 partes no cae tan parejo como en 16.
+Con \texttt{static} el pico está en 16 hilos, no en 20. Esto puede ser ruido, una consecuencia
+de la arquitectura del CPU (P-cores vs E-cores) o un mejor reparto de trabajo. 
 
 \subsection{Barrido de \texttt{schedule}/chunk}
 
@@ -792,7 +812,7 @@ colapso de \texttt{dynamic,64} y \texttt{guided,16} específicamente en
 $n=700$ (2.02 y 3.43 FPS), muy por debajo de sus propios valores en
 $n=256$ (76.88 y 94.71). La causa más probable es desbalance de carga: a
 $n=700$, con chunks de 64 filas, salen apenas $\sim 11$ chunks para
-repartir entre 20 hilos — varios hilos quedan sin trabajo mientras otros
+repartir entre 20 hilos, varios hilos quedan sin trabajo mientras otros
 procesan más de un chunk. El chunk fijo no escala con el tamaño de la
 malla, así que un valor que funciona bien en $n=256$ puede ser
 contraproducente en $n=700$ sin que el schedule en sí sea malo.
@@ -815,6 +835,19 @@ Build & FPS n=256,f=6 & FPS n=700,f=6 \\
 \label{tab:o3}
 \end{table}
 
+No se encontró una diferencia real entre \texttt{-O2}, \texttt{-O3} y
+\texttt{-O3 -march=native} en esta batería. La caída aparente de
+\texttt{-O3}/\texttt{-march=native} frente a \texttt{-O2} en la Tabla
+\ref{tab:o3} (hasta $\sim$17\% en n=700) es más pequeña que el ruido de
+correr la misma build varias veces (ver disclaimer de metodología, Anexo
+3). No se promediaron múltiples corridas por build, así que esta tabla
+es una sola muestra por celda, no una medición estadísticamente firme. A
+simple vista (observación directa de la ventana corriendo, sin cronómetro
+de por medio) las tres builds se sintieron prácticamente indistinguibles
+en fluidez; nada sugiere que alguna sea claramente mejor a esta escala de
+medición. Con la metodología actual, la conclusión honesta es ``sin
+evidencia de diferencia'', no ``\texttt{-O2} es mejor'' ni lo contrario.
+
 \subsection{Resultado final}
 
 Corrida final de referencia, malla grande y pantalla completa (n=700,
@@ -822,15 +855,18 @@ f=16, 20 hilos para la version paralela):
 
 \begin{table}[ht]
 \centering
-\begin{tabular}{lrrr}
+\begin{tabular}{lrrrr}
 \toprule
-Version & FPS & Speedup & Eficiencia \\
+Version & FPS & Speedup vs. secuencial & Speedup vs. 1 hilo & Eficiencia \\
 \midrule
-Secuencial & 1.99 & 1.00$\times$ & 100\% \\
-Paralela (20 hilos) & 43.00 & 21.61$\times$ & 108\% \\
+Secuencial & 1.99 & 1.00$\times$ & --- & --- \\
+Paralela (1 hilo) & 5.02 & 2.52$\times$ & 1.00$\times$ & 100\% \\
+Paralela (20 hilos) & 43.00 & 21.61$\times$ & 8.57$\times$ & 42.8\% \\
 \bottomrule
 \end{tabular}
-\caption{Resultado final, n=700, f=16, pantalla completa.}
+\caption{Resultado final, n=700, f=16, pantalla completa. ``Eficiencia'' es
+speedup vs. 1 hilo dividido entre la cantidad de hilos, así que solo
+mide paralelismo, no la ganancia algorítmica.}
 \label{tab:final}
 \end{table}
 
@@ -852,16 +888,36 @@ vs. paralela.}
 \label{fig:seqparallel}
 \end{figure}
 
-La eficiencia por encima del 100\% en la Tabla \ref{tab:final} no implica
-un speedup superlineal real por hilo: \texttt{master} no es solo
-\texttt{sequential} con más hilos, también incluye el rediseño
-algorítmico completo descrito en las secciones anteriores (red-black en
-vez de Gauss-Seidel fila por fila, Barnes-Hut, \texttt{schedule(static)}).
-La comparación es contra el baseline congelado (\texttt{sequential}), no
-contra "1 hilo del código paralelo", así que parte de esa ganancia viene
-del cambio de algoritmo, no únicamente del paralelismo. Además, a 1.99
-FPS la corrida secuencial reporta muy pocas líneas de FPS en la ventana
-de 30s, con menos muestras que la corrida paralela en el mismo tiempo.
+El $21.61\times$ de speedup total en la Tabla \ref{tab:final} mezcla dos
+cosas distintas, y la fila agregada de ``Paralela (1 hilo)'' separa una de
+la otra. \texttt{master} no es solo \texttt{sequential} con más hilos,
+también incluye el rediseño algorítmico completo descrito en las
+secciones anteriores (red-black en vez de Gauss-Seidel fila por fila,
+Barnes-Hut, \texttt{schedule(static)}). Correr \texttt{master} con
+\texttt{OMP\_NUM\_THREADS=1}, en la misma configuración exacta (n=700,
+f=16, pantalla completa), aísla esa parte, es el mismo algoritmo nuevo
+pero sin repartir el trabajo entre hilos.
+
+Ese valor da 5.02 FPS. Comparado contra el 1.99 FPS de
+\texttt{sequential}, la ganancia de solo reescribir el algoritmo, sin
+agregar un solo hilo, ya es de $5.02/1.99 \approx 2.52\times$. El resto
+del speedup viene de escalar ese mismo código de 1 a 20 hilos, de 5.02 a
+43.00 FPS, un $8.57\times$ adicional por paralelismo real. Multiplicando
+ambos factores ($2.52 \times 8.57 \approx 21.6\times$) se recupera el
+$21.61\times$ medido, con precisión, porque ahora las tres corridas usan
+exactamente la misma configuración.
+
+En otras palabras, de los $21.61\times$ de speedup total solo la porción
+de escalado por hilos ($8.57\times$) es atribuible al paralelismo en sí.
+La eficiencia correcta sobre esa porción es $8.57/20 \approx 42.8\%$, no
+el 108\% que salía antes de dividir el speedup total (que incluía la
+ganancia algorítmica) entre la cantidad de hilos. Ese 108\% era, entonces,
+un artefacto de comparar contra un baseline que nunca recibió el cambio
+de algoritmo, no una señal de que el paralelismo por sí solo superó el
+límite teórico. 42.8\% de eficiencia sobre 20 hilos es un número mucho
+más razonable, y consistente con el resto de la escalabilidad medida en
+esta sección (Tabla \ref{tab:threads}, donde tampoco se llega a
+eficiencia cercana al 100\% a partir de 8 hilos en adelante).
 
 \clearpage
 
@@ -874,10 +930,28 @@ de 30s, con menos muestras que la corrida paralela en el mismo tiempo.
     \item Paralelizar el solver de presión/difusión (red-black
         Gauss-Seidel) fue, por lejos, el cambio de mayor impacto. El FPS
         default subio de 25.20 a 88.27 ($3.5\times$), y la escalabilidad
-        por hilos paso de $\sim 2.6\times$ a $\sim 6\times$.
+        por hilos paso de $\sim 2.6\times$ a $\sim 6\times$. Es el
+        hotspot real del programa (7 llamadas al solver lineal por
+        frame, 20 iteraciones cada una), y ningún otro cambio se acerca
+        a este impacto.
     \item Antes de paralelizar el hotspot real, paralelizar el resto del
         programa (Paso 2) ayuda, pero el techo de Amdahl limita cuanto se
         puede ganar mientras el cuello de botella siga secuencial.
+    \item El speedup total medido (Tabla \ref{tab:final}, $21.61\times$ en
+        n=700, f=16, pantalla completa) \textbf{no es puramente
+        paralelismo}, y la fila de ``Paralela (1 hilo)'' agregada a esa
+        misma tabla lo demuestra. Correr \texttt{master} con un solo
+        hilo, mismo algoritmo (red-black) pero sin repartir el trabajo,
+        ya da $2.52\times$ sobre \texttt{sequential}, puro cambio
+        algorítmico, cero hilos involucrados. El resto ($8.57\times$) sí
+        es paralelismo real, escalando esa misma versión de 1 a 20
+        hilos. La eficiencia correcta del paralelismo en sí es
+        $8.57/20 \approx 42.8\%$, muy distinta del 108\% que sale de
+        dividir el speedup total (que incluye la ganancia algorítmica)
+        entre la cantidad de hilos. Este es probablemente el hallazgo
+        más importante del informe. Un speedup grande frente a un
+        baseline secuencial no dice, por sí solo, cuánto de esa
+        ganancia vino realmente de paralelizar.
     \item La elección de \texttt{schedule} de OpenMP importa más de lo
         esperado y no tiene un ganador universal: \texttt{dynamic, 16}
         era mejor en malla chica, \texttt{static} gana fuerte en malla
@@ -886,16 +960,41 @@ de 30s, con menos muestras que la corrida paralela en el mismo tiempo.
         \texttt{04-schedule-tuning}; el resultado real confirma el
         tradeoff, pierde $\sim$8\% en malla chica para ganar hasta
         $\sim$89\% en malla grande.
+    \item Ese mismo barrido expone un problema de chunk fijo a mallas muy
+        grandes. \texttt{dynamic,64} y \texttt{guided,16} colapsan en
+        n=700 (2.02 y 3.43 FPS) pese a rendir bien en n=256 (76.88 y
+        94.71 FPS). La causa más probable es desbalance de carga, a
+        n=700 con chunks de 64 filas salen apenas $\sim$11 chunks para 20
+        hilos, dejando varios hilos sin trabajo. Un chunk fijo no escala
+        con el tamaño de la malla.
+    \item \texttt{static} tampoco es universalmente superior dentro de la
+        malla más grande probada: en D6/D12 (n=1024) pierde contra
+        \texttt{dynamic,16} (D12 cae de 6.32 a 3.21 FPS, casi $-49\%$),
+        la única fila de la tabla maestra donde el Paso 4 retrocede
+        frente al Paso 3. Queda como límite conocido, no resuelto, de la
+        elección de \texttt{schedule(static)} para $n \geq 1024$.
     \item Con \texttt{static} ya aplicado, la diferencia entre
         \texttt{-O2}, \texttt{-O3} y \texttt{-march=native} quedó dentro
         del ruido de medición de una sola corrida (repetir \texttt{-O2}
         varias veces movió el resultado casi tanto como el que supuesto
-        cambio de build). No hay evidencia concluyente de que alguna
+        cambio de build), y a simple vista las tres builds se sintieron
+        igual de fluidas. No hay evidencia concluyente de que alguna
         build sea mejor a esta resolución de medición.
     \item Barnes-Hut para el n-body no se nota en el FPS a las
         resoluciones probadas porque el solver de fluidos domina el costo
         total; el algoritmo de n-body es una fraccion pequeña del trabajo
-        por frame.
+        por frame. Esto se ve directamente en las filas E/F/G de la Tabla
+        \ref{tab:master}: multiplicar la cantidad de fuentes por 64 (de 4
+        a 256) apenas mueve el FPS (7.52, 11.39, 11.37 en secuencial;
+        87.09, 87.28, 85.07 en Paso 3).
+    \item Las mediciones de este informe no se tomaron bajo condiciones
+        100\% controladas (distintas baterías corridas en días distintos,
+        con posible carga de fondo variable; ver disclaimer en Anexo 3).
+        El hardware sí se mantuvo constante. Las conclusiones que se
+        apoyan en diferencias grandes (varios $\times$ de speedup,
+        decenas de FPS) son confiables; las que dependen de diferencias
+        finas (unos pocos FPS o puntos porcentuales, como el barrido de
+        \texttt{-O2}/\texttt{-O3}) deben leerse con esa salvedad.
 \end{itemize}
 
 \newpage
@@ -1134,6 +1233,25 @@ salida a un log, se filtran las líneas \texttt{FPS=} y se promedian
 descartando las primeras muestras de calentamiento (misma metodología que
 la Sección \ref{sec:resultados}).}
 \label{fig:runcapture}
+\end{figure}
+
+\begin{figure}[ht]
+\centering
+\begin{minipage}{0.48\linewidth}
+\centering
+\includegraphics[width=\linewidth]{figs/seq.png}\\
+\small Secuencial
+\end{minipage}
+\hfill
+\begin{minipage}{0.48\linewidth}
+\centering
+\includegraphics[width=\linewidth]{figs/parallel.png}\\
+\small Paralela (20 hilos)
+\end{minipage}
+\caption{Mismas corridas de referencia (n=700, f=16, pantalla completa)
+usadas en el Resultado final (Sección \ref{sec:resultados}), incluidas
+aquí junto al resto de la evidencia de pruebas.}
+\label{fig:seqparallel-anexo}
 \end{figure}
 
 \subsection*{Comando usado}
