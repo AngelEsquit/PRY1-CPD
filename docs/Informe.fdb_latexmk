@@ -1,5 +1,5 @@
 # Fdb version 4
-["pdflatex"] 1788385334.43392 "Informe.tex" "Informe.pdf" "Informe" 1788385334.9816 0
+["pdflatex"] 1788386199.07107 "Informe.tex" "Informe.pdf" "Informe" 1788386199.60571 0
   "/usr/share/texlive/texmf-dist/fonts/enc/dvips/cm-super/cm-super-ts1.enc" 1136849721 2900 1537cc8184ad1792082cd229ecc269f4 ""
   "/usr/share/texlive/texmf-dist/fonts/map/fontname/texfonts.map" 1577235249 3524 cb3e574dea2d1052e39280babc910dc8 ""
   "/usr/share/texlive/texmf-dist/fonts/tfm/jknappen/ec/tctt1000.tfm" 1136768653 1536 c5729d01ab121276cf99b309129349a0 ""
@@ -196,11 +196,13 @@
   "/usr/share/texlive/texmf-dist/web2c/texmf.cnf" 1721433600 40900 887e0dc8cac988a9e9c574af364cf837 ""
   "/var/lib/texmf/fonts/map/pdftex/updmap/pdftex.map" 1753325278.80609 4547823 614eba97e0451aad345770236b030e55 ""
   "/var/lib/texmf/web2c/pdftex/pdflatex.fmt" 1753325113 7759950 87638d54a7f5dd0784c3358b6ffe4ac5 ""
-  "Informe.aux" 1788385334.92702 10838 f9e89ab5f262909096b3a09aa59fa6ad "pdflatex"
-  "Informe.out" 1788385334.92796 5398 db50f0231b8a1d38d554d83c817c197d "pdflatex"
-  "Informe.tex" 1788385332.04793 59738 88b681292739fc2e4ef9d27066abc7c0 ""
-  "Informe.toc" 1788385334.92796 3652 9f67ec6f6182fb15899499e318091309 "pdflatex"
-  "figs/parallel.png" 1788385224.50662 64410 89433998bfd6ed1de14579886d39eeb0 ""
+  "Informe.aux" 1788386199.55742 10820 bb787e5bb14a5d18e24e4ac2a4974020 "pdflatex"
+  "Informe.out" 1788386199.5585 5398 db50f0231b8a1d38d554d83c817c197d "pdflatex"
+  "Informe.tex" 1788386198.01441 54899 8e2beffcfa3620a4d9f107ca962528ad ""
+  "Informe.toc" 1788386199.5585 2951 ada15cbd8fa13df764dee63a031f1fdc "pdflatex"
+  "figs/parallel.png" 1788385444.23029 64410 89433998bfd6ed1de14579886d39eeb0 ""
+  "figs/runcapture.png" 1788386027.53535 122047 bda08e56fb1db224376365efe57cc70e ""
+  "figs/seq.png" 1788385474.67465 102507 0e388a6ae9514f68cb4716227818302e ""
   (generated)
   "Informe.aux"
   "Informe.log"

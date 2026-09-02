@@ -650,7 +650,8 @@ suficientes.
 La Tabla \ref{tab:master} muestra el FPS promedio por configuración (malla
 $\times$ fuentes), en cada paso de la cadena, con 20 hilos donde aplica.
 Metodología: cada fila se corrió con semilla fija (\texttt{-s 42}), se
-promedio el FPS ignorando las primeras lineas de calentamiento.
+promedio el FPS ignorando las primeras lineas de calentamiento. Las pruebas fueron realizadas
+en una máquina con CPU \texttt{Intel Core i5 14600KF}.
 
 \begin{table}[ht]
 \centering
@@ -687,6 +688,26 @@ En la configuración default ($n=256$, $f=6$), el FPS pasa de 10.52
 El Paso 4 (\texttt{static}) es un tradeoff frente a Paso 3: pierde un
 poco en malla chica pero gana fuerte en malla grande (hasta
 $\sim +89\%$ en n=700, Tabla \ref{tab:master}).
+
+Ese tradeoff se revierte, sin embargo, en la malla más grande de la
+matriz: en D6/D12 ($n=1024$), \texttt{static} queda \emph{peor} que
+\texttt{dynamic,16} (5.10 $\to$ 4.64 FPS en D6, y 6.32 $\to$ 3.21 FPS en
+D12, casi $-49\%$). Es la única fila donde Paso 4 pierde contra Paso 3, y
+la caída es demasiado grande para ser ruido de una sola corrida; el
+barrido de \texttt{schedule} en la Sección \ref{sec:resultados} explica
+por qué (desbalance de carga con chunks fijos cuando la malla es muy
+grande). No se investigó a fondo un \texttt{schedule} alternativo
+específico para $n \geq 1024$, así que queda como límite conocido del
+Paso 4 más que como algo resuelto.
+
+Las filas E/F/G (n=256, variando fuentes de 4 a 256, un rango de $64\times$)
+también son notables por lo poco que cambian: 7.52, 11.39 y 11.37 FPS en
+secuencial, 87.09, 87.28 y 85.07 en Paso 3 — prácticamente planas pese a
+multiplicar la cantidad de cuerpos por 64. Es la evidencia concreta detrás
+de la conclusión de que Barnes-Hut no se nota en el FPS medido: el solver
+de fluidos domina tan fuerte el costo por frame que ni el cambio
+algorítmico de n-body ($O(f^2) \to O(f\log f)$) ni la variación directa en
+$f$ mueven la aguja a estas resoluciones de malla.
 
 \subsection{Escalabilidad por hilos}
 
@@ -766,6 +787,16 @@ reparto estatico en 20 partes no cae tan parejo como en 16.
 \label{tab:schedule-sweep}
 \end{table}
 
+El patrón más llamativo de la Tabla \ref{tab:schedule-sweep} es el
+colapso de \texttt{dynamic,64} y \texttt{guided,16} específicamente en
+$n=700$ (2.02 y 3.43 FPS), muy por debajo de sus propios valores en
+$n=256$ (76.88 y 94.71). La causa más probable es desbalance de carga: a
+$n=700$, con chunks de 64 filas, salen apenas $\sim 11$ chunks para
+repartir entre 20 hilos — varios hilos quedan sin trabajo mientras otros
+procesan más de un chunk. El chunk fijo no escala con el tamaño de la
+malla, así que un valor que funciona bien en $n=256$ puede ser
+contraproducente en $n=700$ sin que el schedule en sí sea malo.
+
 \subsection{Flags de build}
 
 \begin{table}[ht]
@@ -795,8 +826,8 @@ f=16, 20 hilos para la version paralela):
 \toprule
 Version & FPS & Speedup & Eficiencia \\
 \midrule
-Secuencial & --- & 1.00$\times$ & --- \\
-Paralela (20 hilos) & 43.00 & --- & --- \\
+Secuencial & 1.99 & 1.00$\times$ & 100\% \\
+Paralela (20 hilos) & 43.00 & 21.61$\times$ & 108\% \\
 \bottomrule
 \end{tabular}
 \caption{Resultado final, n=700, f=16, pantalla completa.}
@@ -805,10 +836,34 @@ Paralela (20 hilos) & 43.00 & --- & --- \\
 
 \begin{figure}[ht]
 \centering
-\includegraphics[width=0.8\linewidth]{figs/parallel.png}
-\caption{Version paralela corriendo, n=700, f=16, pantalla completa.}
-\label{fig:parallel}
+\begin{minipage}{0.48\linewidth}
+\centering
+\includegraphics[width=\linewidth]{figs/seq.png}\\
+\small Secuencial
+\end{minipage}
+\hfill
+\begin{minipage}{0.48\linewidth}
+\centering
+\includegraphics[width=\linewidth]{figs/parallel.png}\\
+\small Paralela (20 hilos)
+\end{minipage}
+\caption{Corrida de referencia, n=700, f=16, pantalla completa: secuencial
+vs. paralela.}
+\label{fig:seqparallel}
 \end{figure}
+
+La eficiencia por encima del 100\% en la Tabla \ref{tab:final} no implica
+un speedup superlineal real por hilo: \texttt{master} no es solo
+\texttt{sequential} con más hilos, también incluye el rediseño
+algorítmico completo descrito en las secciones anteriores (red-black en
+vez de Gauss-Seidel fila por fila, Barnes-Hut, \texttt{schedule(static)}).
+La comparación es contra el baseline congelado (\texttt{sequential}), no
+contra "1 hilo del código paralelo", así que parte de esa ganancia viene
+del cambio de algoritmo, no únicamente del paralelismo. Además, a 1.99
+FPS la corrida secuencial reporta muy pocas líneas de FPS en la ventana
+de 30s, con menos muestras que la corrida paralela en el mismo tiempo.
+
+\clearpage
 
 % ============================================================
 % CONCLUSIONES Y RECOMENDACIONES
@@ -843,6 +898,8 @@ Paralela (20 hilos) & 43.00 & --- & --- \\
         por frame.
 \end{itemize}
 
+\newpage
+
 \section{Recomendaciones}
 
 \begin{itemize}
@@ -864,6 +921,8 @@ Paralela (20 hilos) & 43.00 & --- & --- \\
         256, medir de nuevo, ya que el comportamiento del schedule óptimo podría
         cambiar fuera del rango probado.
 \end{itemize}
+
+\newpage
 
 % ============================================================
 % BIBLIOGRAFIA
@@ -897,148 +956,13 @@ Portable Shared Memory Parallel Programming}. MIT Press.
 \appendix
 \section{Anexo 1. Diagrama de flujo del programa}
 
+El diagrama de flujo completo (incluyendo el detalle de Barnes-Hut y del
+paso de velocidad como sub-diagramas) está en el siguiente tablero de
+Miro:
+
 \begin{center}
-\resizebox{!}{0.83\textheight}{%
-\begin{tikzpicture}[
-    node distance=0.9cm and 1.5cm,
-    box/.style={rectangle, draw, rounded corners, minimum width=4.2cm, minimum height=0.9cm, align=center, font=\small},
-    decision/.style={diamond, draw, aspect=2.5, minimum width=3.6cm, align=center, font=\small},
-    par/.style={rectangle, draw, rounded corners, minimum width=4.2cm, minimum height=0.9cm, align=center, font=\small, fill=blue!12},
-    arr/.style={-{Stealth[length=2mm]}}
-]
-
-\node[box] (start) {Inicio};
-\node[box, below=of start] (args) {Captura de argumentos\\(\texttt{parse\_arguments})};
-\node[decision, below=of args] (argsok) {\textcolor{black}{args válidos?}};
-\node[box, right=of argsok] (argserr) {Imprime error /\\ayuda y termina};
-\node[box, below=of argsok] (alloc) {Programación defensiva:\\reserva de memoria\\(\texttt{allocate\_fields}, malloc)};
-\node[decision, below=of alloc] (allocok) {memoria OK?};
-\node[box, right=of allocok] (allocerr) {Libera lo reservado\\y termina};
-\node[box, below=of allocok] (sdl) {Inicializa SDL,\\ventana, renderer};
-\node[box, below=of sdl] (loop) {Bucle principal\\(por frame)};
-
-\node[par, below=of loop] (nbody) {Mueve fuentes (n-body,\\Barnes-Hut)};
-\node[par, below=of nbody] (inject) {Inyecta tinta/fuerza\\(\texttt{inject\_sources})};
-\node[par, below=of inject] (vel) {Resuelve velocidad\\(sección paralela:\\difusión + proyección,\\red-black Gauss-Seidel)};
-\node[par, below=of vel] (advect) {Advecta tinta\\(\texttt{collapse(2)})};
-\node[par, below=of advect] (dissip) {Disipa tinta};
-\node[par, below=of dissip] (render) {Renderiza frame\\(\texttt{collapse(2)})};
-\node[box, below=of render] (fps) {Mide y despliega FPS};
-\node[decision, below=of fps] (quit) {ESC/Q o\\cerrar ventana?};
-\node[box, right=of quit] (cleanup) {Libera memoria,\\destruye ventana,\\termina};
-
-\draw[arr] (start) -- (args);
-\draw[arr] (args) -- (argsok);
-\draw[arr] (argsok) -- node[left]{no} (argserr);
-\draw[arr] (argsok) -- node[right]{si} (alloc);
-\draw[arr] (alloc) -- (allocok);
-\draw[arr] (allocok) -- node[left]{no} (allocerr);
-\draw[arr] (allocok) -- node[right]{si} (sdl);
-\draw[arr] (sdl) -- (loop);
-\draw[arr] (loop) -- (nbody);
-\draw[arr] (nbody) -- (inject);
-\draw[arr] (inject) -- (vel);
-\draw[arr] (vel) -- (advect);
-\draw[arr] (advect) -- (dissip);
-\draw[arr] (dissip) -- (render);
-\draw[arr] (render) -- (fps);
-\draw[arr] (fps) -- (quit);
-\draw[arr] (quit) -- node[right]{si} (cleanup);
-\draw[arr] (quit.west) to[out=180,in=180] node[left]{no, siguiente frame} (loop.west);
-
-\end{tikzpicture}%
-}
+\url{https://miro.com/app/board/uXjVHr3myxQ=/?share_link_id=707049245363}
 \end{center}
-
-Los bloques en azul son las secciones paralelizadas con OpenMP. La
-sincronización entre ellas es implícita: cada \texttt{\#pragma omp for}
-tiene una barrera al final, y la sección de velocidad usa
-\texttt{\#pragma omp single} para la condición de frontera dentro de su
-propia región paralela (ver Sección \ref{sec:redblack}).
-
-\subsection*{Que pasa dentro de cada bloque, un frame a la vez}
-
-El diagrama de arriba muestra el orden, pero no el detalle de cada
-bloque. Esta sección entra a ese detalle, bloque por bloque, en el orden
-real de ejecucion dentro de \texttt{main.c}.
-
-\paragraph{1. Mueve fuentes (n-body, Barnes-Hut, \texttt{update\_nbody\_sources}).}
-Reconstruye un quadtree desde cero cada frame (las fuentes se mueven, no
-tiene sentido mantenerlo entre frames). Primero inserta las $f$ fuentes
-una por una (\texttt{bh\_insert}, recursivo, subdivide un nodo hoja en 4
-cuando cae una segunda fuente adentro). Después, para cada fuente,
-recorre el árbol (\texttt{bh\_accumulate}), y si un nodo está lo bastante
-lejos en relación a su tamaño ($\theta = 0.5$), se trata como un solo
-punto de masa en vez de bajar a sus 4 hijos, y eso es lo que baja el costo
-de $O(f^2)$ a $O(f \log f)$. Con la aceleración acumulada, integra
-velocidad y posición, y aplica un rebote amortiguado si una fuente
-llegaria a salir del area valida de inyección. Esta etapa sigue
-secuencial en toda la cadena. El árbol se construye una vez por frame y
-depende del resultado del frame anterior en cada insercion, no vale la
-pena paralelizarla a la cantidad de fuentes que se usan típicamente
-($f \leq 256$).
-
-\paragraph{2. Inyecta tinta/fuerza (\texttt{inject\_sources}).}
-Primero limpia los buffers ``previous'' de velocidad y tinta (van a
-recibirse de nuevo este frame). Para cada fuente, calcula dos gaussianas
-centradas en su posición (continua, no la celda entera), una ancha que
-da el color/empuje general, y una angosta (``core'') que agrega un núcleo
-brillante casi blanco en el centro. La direccion del chorro rota con
-\texttt{cos(phase)}/\texttt{sin(phase)}, generando el efecto espiral. No
-está paralelizada, ya que el radio de inyección por fuente es chico (unas pocas
-celdas) y varias fuentes pueden solapar en la misma celda si están cerca,
-lo que forzaria una sección crítica o reducción, algo que no vale la pena al
-tamaño típico de \texttt{-f}.
-
-\paragraph{3. Resuelve velocidad (\texttt{velocity\_step}).}
-El bloque más caro del frame, y donde vive el paralelismo real. Es una
-secuencia fija, primero fuerza $\to$ difusión $\to$ proyección $\to$
-autoadveccion $\to$ proyección otra vez (difundir y autoadvectar cada uno
-reintroduce algo de divergencia, por eso se proyecta dos veces). La
-difusión y cada proyección llaman a \texttt{solve\_linear}, que abre
-\emph{una sola} región \texttt{\#pragma omp parallel} y adentro corre las
-20 iteraciones de Gauss-Seidel red-black, 20 veces (actualizar celdas
-rojas, barrera implícita, actualizar celdas negras, barrera implícita).
-Abrir la región paralela una sola vez en vez de 40 veces (20 iteraciones
-$\times$ 2 colores) evita el costo fijo de crear el team de hilos
-repetidamente, que en mallas chicas se nota. La condición de frontera se
-aplica con \texttt{\#pragma omp single} dentro de esa misma región: un
-solo hilo la escribe mientras los demas esperan en la barrera implícita
-del \texttt{single}, sin salir de la región paralela.
-
-\paragraph{4. Advecta tinta (\texttt{ink\_step}, una vez por canal R, G, B).}
-Advección semi-Lagrangiana. Para cada celda destino, calcula de donde
-vino ese fluido dando un paso hacia atras a lo largo de su propio campo
-de velocidad, y agarra el valor de ahi por interpolacion bilineal de las
-4 celdas reales alrededor de ese punto (fraccional). Cada celda destino
-solo lee el campo anterior, nunca lo escribe, así que es paralelizable
-sin ningún cuidado extra. Usa \texttt{\#pragma omp parallel for
-collapse(2)}: funde el loop de \texttt{i} y el de \texttt{j} en un solo
-rango repartible, para que una malla angosta (menos filas que hilos)
-siga repartiendo trabajo entre todos. Se llama 3 veces (una por canal de
-color), cada una independiente de las otras.
-
-\paragraph{5. Disipa tinta (\texttt{dissipate\_ink}).}
-Multiplica cada celda de cada canal por \texttt{DISSIPATION} (0.995), sin
-eso la tinta se acumularia hasta saturar la pantalla a blanco. Loop plano
-sobre \texttt{celdas\_totales}, cada celda independiente,
-\texttt{\#pragma omp parallel for}.
-
-\paragraph{6. Renderiza frame (\texttt{render\_ink}).}
-Recorre cada pixel de la textura (no cada celda de la malla, ya que la
-resolucion de ventana suele ser mayor que \texttt{-n}), interpola
-bilinealmente la densidad de tinta en esa posición, aplica un mapeo de
-tono estilo Reinhard y un ajuste de saturacion, y calcula el canal alfa a
-partir del brillo máximo de los 3 canales (para que el fondo se vea donde
-no hay tinta). También usa \texttt{collapse(2)}: sin el, con una ventana
-más angosta que alta (o viceversa) los hilos no se repartirían parejo
-solo sobre el loop externo.
-
-\paragraph{7. Mide FPS y actualiza pantalla.}
-Cuenta frames acumulados y, cada $\sim$0.5s de tiempo real, calcula el
-promedio, lo imprime a \texttt{stdout} y lo pone en el titulo de la
-ventana. No es parte del cálculo de la simulación, es solo
-instrumentación.
 
 % ============================================================
 % ANEXO 2: CATÁLOGO DE FUNCIONES
@@ -1197,37 +1121,20 @@ hilos por curva.
 \subsection*{Captura de una corrida}
 
 A continuacion, salida real de consola de una corrida de referencia
-($n=256$, $f=6$, semilla 42), mostrando el arranque, calentamiento y
-estabilización del FPS.
+($n=720$, $f=16$, pantalla completa), mostrando el arranque, calentamiento
+y estabilización del FPS.
 
-\begin{lstlisting}[style=terminal]
-Fluid simulation (Navier-Stokes) - SEQUENTIAL version
-  Grid         : 256 x 256 cells (65536 interior cells)
-  Sources      : 6
-  Window       : 1920 x 1080 px
-  Seed         : 42
-  visc / diff  : 0.00000 / 0.00010
-FPS= 12.73
-FPS= 11.41
-FPS= 12.96
-FPS= 13.80
-FPS= 75.53
-FPS= 83.46
-FPS= 83.82
-FPS= 82.31
-FPS= 84.26
-FPS= 85.41
-FPS= 84.09
-FPS= 63.32
-FPS= 74.58
-FPS= 70.27
-FPS= 77.99
-\end{lstlisting}
-
-La etiqueta "SEQUENTIAL version" en el encabezado es texto residual
-del archivo \texttt{main.c} (no se actualizó al paralelizar); el binario
-usado en esta corrida es la versión paralela con OpenMP habilitado (20
-hilos).
+\begin{figure}[ht]
+\centering
+\includegraphics[width=0.8\linewidth]{figs/runcapture.png}
+\caption{Captura real de una corrida de referencia ($n=720$, $f=16$,
+pantalla completa), mostrando el arranque, calentamiento y estabilización
+del FPS. Obtenida mediante script: se corre el binario redirigiendo su
+salida a un log, se filtran las líneas \texttt{FPS=} y se promedian
+descartando las primeras muestras de calentamiento (misma metodología que
+la Sección \ref{sec:resultados}).}
+\label{fig:runcapture}
+\end{figure}
 
 \subsection*{Comando usado}
 

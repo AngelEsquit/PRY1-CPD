@@ -25,17 +25,10 @@
 \contentsline {subsection}{\numberline {9.1}Tabla maestra}{14}{subsection.9.1}%
 \contentsline {subsection}{\numberline {9.2}Escalabilidad por hilos}{14}{subsection.9.2}%
 \contentsline {subsection}{\numberline {9.3}Barrido de \texttt {schedule}/chunk}{15}{subsection.9.3}%
-\contentsline {subsection}{\numberline {9.4}Flags de build}{15}{subsection.9.4}%
+\contentsline {subsection}{\numberline {9.4}Flags de build}{16}{subsection.9.4}%
 \contentsline {subsection}{\numberline {9.5}Resultado final}{16}{subsection.9.5}%
-\contentsline {section}{\numberline {10}Conclusiones}{16}{section.10}%
-\contentsline {section}{\numberline {11}Recomendaciones}{16}{section.11}%
-\contentsline {section}{\numberline {A}Anexo 1. Diagrama de flujo del programa}{18}{appendix.Alph1}%
-\contentsline {paragraph}{1. Mueve fuentes (n-body, Barnes-Hut, \texttt {update\_nbody\_sources}).}{19}{appendix.Alph1}%
-\contentsline {paragraph}{2. Inyecta tinta/fuerza (\texttt {inject\_sources}).}{19}{appendix.Alph1}%
-\contentsline {paragraph}{3. Resuelve velocidad (\texttt {velocity\_step}).}{19}{appendix.Alph1}%
-\contentsline {paragraph}{4. Advecta tinta (\texttt {ink\_step}, una vez por canal R, G, B).}{19}{appendix.Alph1}%
-\contentsline {paragraph}{5. Disipa tinta (\texttt {dissipate\_ink}).}{19}{appendix.Alph1}%
-\contentsline {paragraph}{6. Renderiza frame (\texttt {render\_ink}).}{20}{appendix.Alph1}%
-\contentsline {paragraph}{7. Mide FPS y actualiza pantalla.}{20}{appendix.Alph1}%
+\contentsline {section}{\numberline {10}Conclusiones}{17}{section.10}%
+\contentsline {section}{\numberline {11}Recomendaciones}{18}{section.11}%
+\contentsline {section}{\numberline {A}Anexo 1. Diagrama de flujo del programa}{20}{appendix.Alph1}%
 \contentsline {section}{\numberline {B}Anexo 2. Catálogo de funciones}{21}{appendix.Alph2}%
 \contentsline {section}{\numberline {C}Anexo 3. Bitácora de pruebas}{25}{appendix.Alph3}%
