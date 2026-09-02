@@ -6,49 +6,42 @@
 #include <stddef.h>
 #include <stdio.h>
 
-// Exponent of alpha's gamma curve, see render_ink(). Smaller means alpha
-// reaches opaque faster even at low ink brightness.
+// Exponent of alpha's gamma curve, see render_ink(). Smaller = alpha reaches
+// opaque faster at low ink brightness.
 #define ALPHA_GAMMA 0.35f
 
-// Reads "field" at a fractional position (fx, fy) by averaging the 4
-// real cells around that point, closer cell counts more. Same coordinate
-// space as a pixel index of the N x N texture: fx=0 is interior cell 1's
-// center, fx=grid_n-1 is interior cell grid_n's center.
+// Bilinear sample of field at fractional cell coords (fx, fy). Same
+// coordinate space as the texture: fx=0 is interior cell 1's center,
+// fx=grid_n-1 is interior cell grid_n's center.
 static float sample_bilinear(const float *field, float fx, float fy)
 {
     int i0, i1, j0, j1;
     float weight_x1, weight_x0, weight_y1, weight_y0;
 
-    // Pin (fx, fy) inside the grid so nothing below reads out of bounds.
+    // Clamp to grid bounds so the lookups below can't go out of range.
     fx = clamp(fx, 0.0f, (float)(grid_n - 1));
     fy = clamp(fy, 0.0f, (float)(grid_n - 1));
 
-    // (fx, fy) is a fractional pixel position, not an actual cell, so
-    // grab the 2 real columns and 2 real rows around it (i0/i1, j0/j1).
-    // Together they form a small 2x2 box of real cells with (fx, fy)
-    // somewhere inside.
+    // Enclosing 2x2 cell box: i0/j0 floor, i1/j1 the next cell over.
     i0 = (int)fx;  i1 = (i0 < grid_n - 1) ? i0 + 1 : i0;
     j0 = (int)fy;  j1 = (j0 < grid_n - 1) ? j0 + 1 : j0;
 
-    // How far into that box (fx, fy) sits, as a fraction between 0 and 1
-    // on each axis, used below to weight each corner's contribution.
+    // Fractional offset into that box on each axis, in [0, 1].
     weight_x1 = fx - (float)i0;  weight_x0 = 1.0f - weight_x1;
     weight_y1 = fy - (float)j0;  weight_y0 = 1.0f - weight_y1;
 
-    // Blend the field's value at the 4 corners of that box into one
-    // number: each corner counts in proportion to how close (fx, fy) is
-    // to it. The "+1" on every index just shifts from pixel numbering
-    // (0..N-1) to this grid's real-cell numbering (1..N), since cell 0
-    // is the ghost border, not real data.
+    // Weighted sum of the 4 corners (bilinear interpolation). "+1" on every
+    // index converts pixel numbering (0..N-1) to real-cell numbering
+    // (1..N); cell 0 is the ghost border, not real data.
     return weight_x0 * (weight_y0 * field[IX(i0 + 1, j0 + 1)] +
                         weight_y1 * field[IX(i0 + 1, j1 + 1)]) +
            weight_x1 * (weight_y0 * field[IX(i1 + 1, j0 + 1)] +
                         weight_y1 * field[IX(i1 + 1, j1 + 1)]);
 }
 
-// Dumps ink density into the SDL texture, one texture pixel at a time.
-// Doesn't rely on SDL's own scaling since the software renderer ignores
-// the linear-filtering hint (see render.h).
+// Writes ink density into the SDL texture, one pixel at a time. Doesn't
+// rely on SDL's own scaling since the software renderer ignores the
+// linear-filtering hint (see render.h).
 void render_ink(SDL_Texture *texture, const FluidFields *fields,
                 int texture_width, int texture_height)
 {
@@ -69,12 +62,11 @@ void render_ink(SDL_Texture *texture, const FluidFields *fields,
 
     pixels = (Uint32 *)raw_pixels;
 
-    // Each pixel only reads the ink fields, never writes them, so this is
-    // safe to split across threads. collapse(2) needs perfectly nested
-    // loops, so `row`/`fy` (otherwise hoisted out of the inner loop since
-    // fy only depends on j) get recomputed per pixel instead: a cheap
-    // recalculation that lets narrow grids still spread work over every
-    // thread instead of just the outer loop.
+    // Each pixel only reads the ink fields, never writes them: safe to
+    // split across threads. collapse(2) needs perfectly nested loops, so
+    // `row`/`fy` (otherwise loop-invariant in j) are recomputed per pixel
+    // instead of hoisted, trading a cheap recalculation for even work
+    // distribution on narrow grids.
     #pragma omp parallel for collapse(2) \
         private(fx, fy, value_r, value_g, value_b, average) schedule(dynamic, 16)
     for (j = 0; j < texture_height; j++) {
@@ -83,9 +75,9 @@ void render_ink(SDL_Texture *texture, const FluidFields *fields,
             fy = ((float)j + 0.5f) * scale_y - 0.5f;
             fx = ((float)i + 0.5f) * scale_x - 0.5f;
 
-            // Reinhard-style tone mapping (x / (x + k)) instead of a hard
-            // clip, so overlapping sources compress toward white smoothly
-            // instead of clipping abruptly.
+            // Reinhard tone mapping (x / (x + k)) instead of a hard clip:
+            // overlapping sources compress toward white instead of
+            // clipping abruptly.
             value_r = sample_bilinear(fields->ink_r, fx, fy) * BRIGHTNESS_FACTOR;
             value_g = sample_bilinear(fields->ink_g, fx, fy) * BRIGHTNESS_FACTOR;
             value_b = sample_bilinear(fields->ink_b, fx, fy) * BRIGHTNESS_FACTOR;
@@ -94,9 +86,9 @@ void render_ink(SDL_Texture *texture, const FluidFields *fields,
             value_g = value_g / (value_g + CONTRAST_FACTOR);
             value_b = value_b / (value_b + CONTRAST_FACTOR);
 
-            // Push each channel away from this pixel's average gray to
-            // recover saturation without changing overall brightness.
-            // Keeps the result from looking washed out.
+            // Push each channel away from the pixel's gray average to
+            // restore saturation lost by the tone mapping above, without
+            // changing overall brightness.
             average = (value_r + value_g + value_b) / 3.0f;
             value_r = clamp(average + (value_r - average) * SATURATION_FACTOR, 0.0f, 1.0f);
             value_g = clamp(average + (value_g - average) * SATURATION_FACTOR, 0.0f, 1.0f);
@@ -105,7 +97,7 @@ void render_ink(SDL_Texture *texture, const FluidFields *fields,
             // Alpha tracks ink brightness instead of a fixed 0xFF, so the
             // background shows through where there's no ink. Uses the
             // brightest of the 3 channels so a color saturated in only one
-            // channel doesn't read as more transparent than it should.
+            // channel isn't rendered more transparent than it should be.
             {
                 float max_brightness, alpha;
 
@@ -113,10 +105,9 @@ void render_ink(SDL_Texture *texture, const FluidFields *fields,
                 if (value_g > max_brightness) max_brightness = value_g;
                 if (value_b > max_brightness) max_brightness = value_b;
 
-                // A gamma curve below 1 pushes alpha to opaque faster than
-                // brightness itself rises, so the blob stays vivid instead
-                // of looking washed out where it blends with the dark
-                // background, and only the very edge stays transparent.
+                // Gamma < 1 pushes alpha to opaque faster than brightness
+                // rises, keeping the blob vivid against the dark
+                // background; only the outer edge stays transparent.
                 alpha = powf(max_brightness, ALPHA_GAMMA);
 
                 row[i] = ((Uint32)(alpha * 255.0f) << 24) |
