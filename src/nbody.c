@@ -124,14 +124,34 @@ static void bh_accumulate(int idx, int body, const InkSource *sources,
                           float *acc_x, float *acc_y)
 {
     const QuadNode *n = &bh_pool[idx];
+    // Empty node, or this is the same body we're computing gravity for
+    // (a body doesn't pull on itself). Nothing to add, stop here.
     if (n->mass <= 0.0f || n->body == body) return;
 
+    // How far this node's center of mass is from the body we care about.
     float dx = n->com_x - sources[body].pos_x;
     float dy = n->com_y - sources[body].pos_y;
+    // dist2 is distance squared. NBODY_SOFTENING is added in so dist2
+    // never gets close to 0, which would otherwise make the force below
+    // shoot up toward infinity whenever 2 bodies get very close together.
     float dist2 = dx * dx + dy * dy + NBODY_SOFTENING * NBODY_SOFTENING;
 
+    // Decide: is this node small/far enough to treat as one blob, or do
+    // we need to look inside it at its individual children? A leaf (no
+    // children) always counts as one thing since there's nothing to
+    // split further. Otherwise, compare the node's width against its
+    // distance, a big node that's still close by fails this check and
+    // gets opened up below; a small or distant node passes and gets
+    // treated as a single point mass.
     int is_leaf = (n->children[0] == -1);
     if (is_leaf || (n->half * 2.0f) / sqrtf(dist2) < BH_THETA) {
+        // Standard gravity, force = G * mass1 * mass2 / distance^2,
+        // pointed from the body toward this node's center of mass. This
+        // node's mass already represents every body inside it combined,
+        // so one calculation here stands in for however many bodies are
+        // actually in there. Multiplying by dx/dy (instead of just a
+        // unit vector) folds "which direction to push" and "how strong"
+        // into the same 2 lines.
         float inv_dist = 1.0f / sqrtf(dist2);
         float factor = NBODY_G * n->mass * inv_dist * inv_dist * inv_dist;
         *acc_x += factor * dx;
@@ -139,6 +159,8 @@ static void bh_accumulate(int idx, int body, const InkSource *sources,
         return;
     }
 
+    // This node was too close/big to approximate, so look at its 4
+    // quadrants individually instead (each one repeats this same check).
     for (int c = 0; c < 4; c++) {
         if (n->children[c] != -1) {
             bh_accumulate(n->children[c], body, sources, acc_x, acc_y);

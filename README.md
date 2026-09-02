@@ -14,9 +14,9 @@ OpenMP loop parallelization (`02-omp-loops`), a red-black parallel solver
 (`03-omp-solver`), and a `static` OpenMP schedule tuned for large grids
 (`04-schedule-tuning`). Default config (n=256, f=6): ~80.68 FPS at 20
 threads, up from ~10.52 sequential (~7.7x). Large grids (n=700) do even
-better: up to ~54.76 FPS vs. ~2.10 sequential (~26x). Full numbers and
-methodology: `docs/Roadmap.md`. Written project report (UVG format,
-LaTeX): `docs/Informe.tex` / `docs/Informe.pdf`.
+better: up to ~54.76 FPS vs. ~2.10 sequential (~26x). Full numbers,
+methodology, and the whole roadmap are in the written project report
+(UVG format, LaTeX): `docs/Informe.tex` / `docs/Informe.pdf`.
 
 ---
 
@@ -33,7 +33,7 @@ measured before merging into `master`:
 | `05-collapse-tuning` | Cancelled before producing reliable numbers, not merged. |
 | `parallel-omp` | Frozen external reference (pre-roadmap OpenMP version, own legacy CLI). Never merged in. |
 
-Full plan, benchmark methodology and results: `docs/Roadmap.md`.
+Full plan, benchmark methodology and results are in `docs/Informe.pdf`.
 
 ---
 
@@ -166,10 +166,9 @@ of `O(f²)`):
 - **Advection, projection, render** — `#pragma omp parallel for
   collapse(2)`, fusing both loop dimensions so narrow grids still spread
   work across every thread.
-- **Schedule**: `schedule(static)` everywhere (see
-  `docs/Roadmap.md`, Paso 4, for why — it's a tradeoff, faster on large
-  grids, a bit slower on small ones, versus the `dynamic, 16` used
-  through `03-omp-solver`).
+- **Schedule**: `schedule(static)` everywhere (see `docs/Informe.pdf`,
+  Paso 4, for why — it's a tradeoff, faster on large grids, a bit slower
+  on small ones, versus the `dynamic, 16` used through `03-omp-solver`).
 
 No mutexes or critical sections: the design avoids race conditions by
 construction (every output cell is written exactly once, by exactly one

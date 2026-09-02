@@ -2,6 +2,8 @@
 
 \usepackage[utf8]{inputenc}
 \usepackage[spanish]{babel}
+\usepackage{amsmath}
+\usepackage{amssymb}
 \usepackage[margin=2.5cm,headheight=14pt]{geometry}
 \usepackage{graphicx}
 \usepackage{microtype}
@@ -25,7 +27,7 @@
     linkcolor=black,
     citecolor=black,
     urlcolor=blue,
-    pdftitle={Proyecto 1 - Computacion Paralela y Distribuida},
+    pdftitle={Proyecto 1 - Computación Paralela y Distribuida},
 }
 
 \pagestyle{fancy}
@@ -63,9 +65,9 @@
     \vspace*{1cm}
 
     {\large Universidad del Valle de Guatemala\par}
-    {\large Facultad de Ingenieria\par}
-    {\large Departamento de Ciencias de la Computacion\par}
-    {\large Computacion Paralela y Distribuida - Seccion 20\par}
+    {\large Facultad de Ingeniería\par}
+    {\large Departamento de Ciencias de la Computación\par}
+    {\large Computación Paralela y Distribuida - Sección 20\par}
     \vspace{0.3cm}
 
     \vspace{3cm}
@@ -74,7 +76,7 @@
     \vspace{0.5cm}
     {\Large Screensaver de fluidos paralelizado con OpenMP\par}
     \vspace{0.3cm}
-    {\large Simulacion de Navier-Stokes (metodo Stable Fluids) con n-cuerpos\par}
+    {\large Simulación de Navier-Stokes (método Stable Fluids) con n-cuerpos\par}
 
     \vspace{3cm}
 
@@ -93,61 +95,347 @@
 \clearpage
 
 % ============================================================
-% INTRODUCCION
+% INTRODUCCIÓN
 % ============================================================
-\section{Introduccion}
+\section{Introducción}
 
-Este informe documenta el desarrollo de un screensaver de fluidos,
-paralelizado con OpenMP. El programa simula un fluido incompresible en 2D
-usando el metodo Stable Fluids de Jos Stam, con fuentes de tinta que se
-mueven por gravedad mutua (n-cuerpos).
+Este informe documenta el desarrollo del Proyecto \#1 del curso de
+Computación Paralela y Distribuida, un screensaver de fluidos
+paralelizado con OpenMP. El programa simula un fluido incompresible en
+2D usando el método Stable Fluids de Jos Stam, con varias fuentes de
+tinta de colores que inyectan momentum y color, y que además se mueven
+entre sí por gravedad mutua (un sistema de n-cuerpos aparte, corriendo
+sobre la misma malla).
 
-El objetivo del proyecto es tomar una version secuencial funcional y
-mejorarla de forma iterativa, midiendo speedup y eficiencia en cada paso.
-Cada paso agrega una sola mejora (algoritmica o de paralelizacion) para que
-su impacto se pueda medir por separado.
+El curso pide diseñar e implementar primero una versión secuencial
+funcional de un problema con potencial real de paralelización, y luego
+mejorarla de forma iterativa aplicando el método PCAM y los patrones de
+descomposición vistos en clase, midiendo speedup y eficiencia en cada
+paso. La simulación de fluidos se eligió justamente por eso, la malla se
+puede dividir en regiones independientes de forma natural, pero también
+tiene un componente genuinamente difícil de paralelizar (el solver de
+presión y difusión), lo que da margen para mostrar tanto los casos
+fáciles como una solución algorítmica real a una dependencia de datos.
+
+El proyecto se organizó como una cadena de ramas de git, una por cada
+paso del roadmap de paralelización, cada una medida por separado antes
+de integrarse a la rama principal. Este informe resume y
+explica los resultados, además de cubrir el fundamento
+matemático del algoritmo y el diseño interno del código.
+
+El resto del informe sigue este orden. La Sección \ref{sec:antecedentes}
+da el contexto de OpenMP y de las técnicas usadas. La Sección
+\ref{sec:matematica} deriva las ecuaciones del algoritmo desde
+Navier-Stokes hasta su forma discreta, la que corre en la malla. Las
+Secciones de Descripción del problema, Metodología y Versión secuencial
+cubren el diseño del programa antes de paralelizar. La Sección
+\ref{sec:paralelizacion} documenta cada paso de la cadena de
+paralelización, y la Sección \ref{sec:resultados} presenta los números
+de FPS y speedup medidos para cada uno. Los anexos incluyen el diagrama
+de flujo completo del programa, el catálogo de todas las funciones, y la
+bitácora de pruebas.
+
+\newpage
 
 % ============================================================
 % ANTECEDENTES
 % ============================================================
-\section{Antecedentes}
+\section{Antecedentes}\label{sec:antecedentes}
 
-OpenMP es una API para programacion paralela de memoria compartida en
+OpenMP es una API para programación paralela de memoria compartida en
 C/C++/Fortran. Funciona mediante directivas de compilador (\texttt{\#pragma
-omp}) que le indican al compilador que partes del codigo se pueden repartir
+omp}) que le indican al compilador que partes del código se pueden repartir
 entre varios hilos. A diferencia de MPI (memoria distribuida), todos los
 hilos de OpenMP comparten el mismo espacio de memoria, lo cual simplifica
-la programacion pero exige cuidado con condiciones de carrera.
+la programación pero exige cuidado con condiciones de carrera.
 
-El problema elegido, simulacion de fluidos, es un caso clasico de
-paralelizacion de memoria compartida: la malla se puede dividir en
-regiones, y (con el cuidado correcto de dependencias) cada region se puede
-actualizar en un hilo distinto. El metodo de Stam (\emph{Stable Fluids})
+El problema elegido, simulación de fluidos, es un caso clásico de
+paralelización de memoria compartida. La malla se puede dividir en
+regiones, y (con el cuidado correcto de dependencias) cada región se puede
+actualizar en un hilo distinto. El método de Stam (\emph{Stable Fluids})
 resuelve las ecuaciones de Navier-Stokes con pasos incondicionalmente
-estables, lo que permite pasos de tiempo grandes sin que la simulacion
-explote numericamente \cite{stam1999}.
+estables, lo que permite pasos de tiempo grandes sin que la simulación
+explote numéricamente \cite{stam1999}.
 
-Para el movimiento de las fuentes de tinta se implemento un sistema de
+Para el movimiento de las fuentes de tinta se implementó un sistema de
 n-cuerpos con gravedad mutua, acelerado con un quadtree Barnes-Hut
 \cite{barneshut1986}, que reduce el costo de $O(n^2)$ a $O(n \log n)$.
+
+\newpage
+
+\section{Fundamento Físico - Matemático}\label{sec:matematica}
+
+Esta sección define los campos y ecuaciones detrás del algoritmo, 
+ desde la ecuación continua hasta la versión discreta que
+corre en el código. Las versiones paralelas resuelven exactamente las
+mismas ecuaciones; solo cambia cómo se reparte el trabajo entre hilos.
+
+\subsection{Ecuaciones de Navier-Stokes (Incompresibles)}
+
+El fluido se describe con dos campos sobre el plano. El campo de
+velocidad es $\mathbf{u}(x, y, t) = (u_x, u_y)$, y el campo de presión es
+$p(x, y, t)$. Ambos son funciones continuas del espacio y del tiempo.
+Para que el fluido sea incompresible, ambos campos deben satisfacer las
+ecuaciones de Navier-Stokes.
+
+\begin{equation}
+\frac{\partial \mathbf{u}}{\partial t} = -(\mathbf{u} \cdot \nabla)\mathbf{u} + \nu \nabla^2 \mathbf{u} + \mathbf{f}
+\label{eq:momentum}
+\end{equation}
+\begin{equation}
+\nabla \cdot \mathbf{u} = 0
+\label{eq:incompressible}
+\end{equation}
+
+La Ecuación \ref{eq:momentum} es la conservación de momentum. Dice que
+$\mathbf{u}$ cambia por 3 efectos independientes que se suman. El primero
+es la autoadvección, $-(\mathbf{u} \cdot \nabla)\mathbf{u}$, el fluido
+arrastrándose a sí mismo. El segundo es la difusión, $\nu \nabla^2
+\mathbf{u}$, la viscosidad $\nu$ suavizando el campo. El tercero son las
+fuerzas externas, $\mathbf{f}$, lo que las fuentes inyectan directamente.
+La Ecuación \ref{eq:incompressible} es la restricción de
+incompresibilidad. La divergencia $\nabla \cdot \mathbf{u}$ mide cuánto
+más sale de una región que lo que entra; forzarla a cero en todo punto
+es lo que le impide al fluido comprimirse o expandirse.
+
+Resolver ambas ecuaciones a la vez, de forma exacta, es costoso y
+numéricamente inestable a pasos de tiempo grandes. Stam \cite{stam1999}
+las resuelve con \emph{operator splitting}. En vez de tratar los 3
+efectos de la Ecuación \ref{eq:momentum} de forma simultánea, se aplica
+cada uno por separado, en su propio sub-paso, y al final se corrige la
+incompresibilidad de la Ecuación \ref{eq:incompressible} aparte. Esa
+secuencia de sub-pasos es exactamente lo que implementa
+\texttt{velocity\_step} en \texttt{solver.c}.
+
+El mismo $\mathbf{u}$ de las ecuaciones tiene un tercer uso en el
+programa. Cada canal de color de la tinta (rojo, verde, azul) es tratado
+como un campo escalar $d(x, y, t)$ que no empuja al fluido, solo se deja
+arrastrar por él. $d$ obedece su propia ecuación de transporte pasivo,
+\[
+\frac{\partial d}{\partial t} = -(\mathbf{u} \cdot \nabla) d + \kappa \nabla^2 d,
+\]
+con $\kappa$ el coeficiente de difusión de tinta (flag \texttt{-d}). Es
+la Ecuación \ref{eq:momentum} sin el término de fuerza y sin la parte
+vectorial, y por eso se resuelve con los mismos 2 operadores que la
+velocidad (difusión y advección, ver abajo) en vez de necesitar código
+aparte: es lo que hace \texttt{ink\_step}, una vez por canal.
+
+\subsection{Los 4 operadores, y su versión discreta}
+
+La malla es una grilla de $(n+2) \times (n+2)$ celdas. Las $n \times n$
+celdas interiores contienen la simulación real; el anillo de 1 celda
+alrededor es una frontera fantasma, usada para aplicar las condiciones de
+borde sin necesitar casos especiales dentro del loop principal (la macro
+\texttt{IX(i, j)} en \texttt{common.h} mapea $(i, j)$ al índice plano del
+arreglo). Cada operador de abajo actúa sobre esta grilla discreta, y
+todos comparten la misma firma de entrada y salida, un campo antes del
+paso ($\mathbf{u}^0$ o $d^0$) y el mismo campo después.
+
+\paragraph{1. Fuerza (\texttt{add\_source}).} Aplica el término
+$\mathbf{f}$ de la Ecuación \ref{eq:momentum} directamente sobre la
+malla,
+\[
+\mathbf{u}_{i,j} \leftarrow \mathbf{u}_{i,j} + \Delta t \, \mathbf{f}_{i,j},
+\]
+una celda a la vez. Cada celda solo depende de sí misma, así que es
+trivial de paralelizar. \emph{En código}, es un loop plano de
+\texttt{total\_cells} iteraciones con un solo
+\texttt{\#pragma omp parallel for schedule(static)} encima, sin
+variables privadas ni ningún cuidado extra.
+
+\paragraph{2. Difusión (\texttt{diffuse}).} El laplaciano $\nabla^2
+\mathbf{u}$ se aproxima con diferencias finitas centradas, la diferencia
+entre una celda y el promedio de sus 4 vecinos. Evaluar esa aproximación
+en el estado \emph{nuevo} (en vez del viejo) es lo que hace que el
+método sea incondicionalmente estable, pero convierte cada celda en una
+incógnita que depende de sus 4 vecinas, también incógnitas. Para toda la
+malla a la vez, eso es un sistema lineal disperso $A \mathbf{u} =
+\mathbf{u}^0$ de $N = n^2$ ecuaciones (una por celda), donde $A$ solo
+tiene 5 entradas no cero por fila. Celda por celda, cada fila de ese
+sistema se ve así.
+\[
+(1 + 4a) \, u_{i,j} - a \left( u_{i-1,j} + u_{i+1,j} + u_{i,j-1} + u_{i,j+1} \right) = u^0_{i,j}, \qquad a = \nu \, \Delta t \, n^2.
+\]
+Un sistema de dimensiones $N \times N$ es demasiado grande para invertir
+$A$ directamente a cada frame, así que se aproxima de forma iterativa con
+\textbf{Gauss-Seidel}. Cada iteración recalcula toda celda con
+\[
+u_{i,j} \leftarrow \frac{u^0_{i,j} + a \left( u_{i-1,j} + u_{i+1,j} + u_{i,j-1} + u_{i,j+1} \right)}{1 + 4a},
+\]
+usando los valores de vecinos más recientes disponibles (de ahí el
+nombre, cada pasada mejora la aproximación anterior). El código corre
+\texttt{GAUSS\_SEIDEL\_ITERS = 20} iteraciones de esto por llamada, que
+en la práctica converge lo suficiente para verse estable en el rango de
+\texttt{-n} usado. La proyección (operador 4, abajo) resuelve la misma
+forma de sistema, cambiando $\mathbf{u}$ por $p$. \emph{En código}, esta
+fórmula es exactamente lo que calcula \texttt{relax\_color} en
+\texttt{solver.c}, una vez por color del recorrido red-black (Sección
+\ref{sec:redblack} explica por qué hace falta ese recorrido en vez de
+un loop plano); las 20 iteraciones completas corren dentro de una sola
+región \texttt{\#pragma omp parallel}, con
+\texttt{\#pragma omp single} aplicando la condición de frontera entre
+colores.
+
+\paragraph{3. Advección (\texttt{advect}).} El fluido transporta tanto a
+$\mathbf{u}$ como a $d$ a lo largo de sí mismo. Para no ser inestable a
+pasos de tiempo grandes, cada celda destino ``mira hacia atrás'' en vez
+de empujar su valor hacia adelante. En vez de preguntar ``¿a dónde va mi
+valor?'', pregunta ``¿de dónde vino el valor que ahora tengo?''. Para la
+celda $(i, j)$, ese origen es
+\[
+(x_0, y_0) = (i, j) - \Delta t \, n \, \mathbf{u}_{i,j}.
+\]
+Como $(x_0, y_0)$ casi nunca cae en una celda entera, el valor final se
+obtiene por \textbf{interpolación bilineal} entre las 4 celdas reales
+alrededor de ese punto fraccional (el Anexo 1, bloque 4, tiene el
+detalle línea por línea de esa interpolación). \emph{En código}, cada
+celda destino solo lee \texttt{field\_prev}, nunca lo escribe, así que
+el loop es paralelizable sin ningún cuidado extra, con
+\texttt{\#pragma omp parallel for collapse(2)} fundiendo los 2 loops
+anidados (\texttt{i}, \texttt{j}) en un solo rango repartible y
+\texttt{private(...)} listando las variables escalares temporales
+($i_0, i_1, j_0, j_1$ y los 4 pesos de interpolación) para que cada
+hilo tenga su propia copia.
+
+\paragraph{4. Proyección de Hodge (\texttt{project}).} Los 3 operadores
+anteriores dejan a $\mathbf{u}$ con algo de divergencia, violando la
+Ecuación \ref{eq:incompressible}. La descomposición de Hodge dice que
+cualquier campo $\mathbf{w}$ se puede separar en una parte libre de
+divergencia más el gradiente de un escalar, $\mathbf{w} = \mathbf{u} +
+\nabla p$, con $\nabla \cdot \mathbf{u} = 0$. Recuperar ese $\mathbf{u}$
+toma 3 pasos. Primero se mide la divergencia de $\mathbf{w}$, luego se
+resuelve la ecuación de Poisson $\nabla^2 p = \nabla \cdot \mathbf{w}$ (mismo solver disperso
+de la difusión, ahora para $p$), y finalmente se resta su gradiente,
+$\mathbf{u} = \mathbf{w} - \nabla p$. El código llama a este operador dos
+veces por frame (Anexo 1, bloque 3) porque tanto difundir como
+autoadvectar reintroducen algo de divergencia cada uno. \emph{En
+código}, medir la divergencia y restar el gradiente son 2 loops
+separados, cada uno con su propio
+\texttt{\#pragma omp parallel for collapse(2)}; el paso de en medio
+(resolver Poisson para $p$) reusa \texttt{solve\_linear}, la misma
+función de Gauss-Seidel red-black del operador 2.
+
+\subsection{Representaciones en Memoria, \texttt{FluidFields}}
+
+Cada campo de arriba vive en memoria como uno o más arreglos de
+\texttt{fields.c}/\texttt{fields.h}, del tamaño de la malla completa. La
+Tabla \ref{tab:fields-map} conecta cada símbolo con su nombre real en el
+código.
+
+\begin{table}[ht]
+\centering
+\begin{tabular}{clp{7.5cm}}
+\toprule
+Símbolo & Campo(s) de \texttt{FluidFields} & Qué guarda \\
+\midrule
+$\mathbf{u} = (u_x, u_y)$ & \texttt{vel\_x}, \texttt{vel\_y} & Velocidad actual, las 2 componentes por separado. \\
+$\mathbf{u}^0$ & \texttt{vel\_x\_p}, \texttt{vel\_y\_p} & Velocidad del paso anterior; también acumula la fuerza $\mathbf{f}$ antes de cada \texttt{velocity\_step}. \\
+$p$ & \texttt{pressure} & Presión, resuelta por \texttt{project} y descartada cada frame. \\
+$\nabla \cdot \mathbf{u}$ & \texttt{divergence} & Divergencia medida al inicio de \texttt{project}, lado derecho de la ecuación de Poisson. \\
+$d$ (uno por canal) & \texttt{ink\_r}, \texttt{ink\_g}, \texttt{ink\_b} & Densidad de tinta actual, un campo escalar independiente por color. \\
+$d^0$ (uno por canal) & \texttt{ink\_r\_p}, \texttt{ink\_g\_p}, \texttt{ink\_b\_p} & Densidad de tinta del paso anterior, y acumulador de lo que inyecta \texttt{inject\_sources}. \\
+\bottomrule
+\end{tabular}
+\caption{De los símbolos matemáticos a los campos reales de \texttt{FluidFields}.}
+\label{tab:fields-map}
+\end{table}
+
+El patrón ``actual'' + ``\_p'' (anterior) se repite en los 3 grupos de
+campos porque \texttt{diffuse} y \texttt{advect} necesitan leer el estado
+viejo completo mientras escriben el nuevo (Sección de Anexo 2 tiene la
+firma completa de cada función). Después de cada operador,
+\texttt{swap\_fields} intercambia los 2 punteros en vez de copiar el
+arreglo entero, así que ``actual'' y ``anterior'' cambian de lugar sin
+mover datos.
+
+\subsection{Paralelización de Gauss-Seidel}
+
+La fórmula de Gauss-Seidel de arriba actualiza $u_{i,j}$ usando
+$u_{i-1,j}$ y $u_{i,j-1}$, que ya se actualizaron en esa misma pasada
+(a diferencia de Jacobi, que siempre lee el estado completo de la pasada
+anterior). Leer valores ya actualizados es lo que hace converger a
+Gauss-Seidel más rápido que Jacobi, pero también crea una dependencia
+secuencial estricta entre celdas consecutivas. La celda $(i,j)$ no puede
+calcularse sin que $(i-1,j)$ ya haya terminado. Repartir ese loop entre
+hilos tal cual produciría condiciones de carrera. La Sección
+\ref{sec:redblack} explica la solución que se implementó (un recorrido
+red-black) para paralelizarlo sin perder la velocidad de convergencia de
+Gauss-Seidel.
+
+\subsection{N-cuerpos, gravedad y Barnes-Hut}
+
+Cada fuente de tinta es también un cuerpo, con posición propia
+$(x_i, y_i)$, velocidad propia $(v_{x,i}, v_{y,i})$ y masa $m_i$,
+independientes de la malla de fluido (viven en la struct
+\texttt{InkSource}, no en \texttt{FluidFields}). La fuerza gravitacional
+entre dos cuerpos $i, j$ es
+\[
+\mathbf{F}_{i \to j} = G \, \frac{m_i m_j}{d^2 + \epsilon^2} \, \hat{\mathbf{d}}, \qquad d = |\mathbf{r}_j - \mathbf{r}_i|,
+\]
+con $\hat{\mathbf{d}}$ el vector unitario de $i$ hacia $j$. El término de
+\emph{softening} $\epsilon$ (\texttt{NBODY\_SOFTENING}, un valor fijo en
+celdas) evita que la fuerza se dispare a infinito cuando $d \to 0$, algo
+que rompería la integración numérica cada vez que dos fuentes casi se
+tocan. Cada frame, \texttt{update\_nbody\_sources} integra esta fuerza
+con Euler semi-implícito, actualizando primero la velocidad y luego la
+posición con esa velocidad ya nueva,
+\[
+\mathbf{v}_i \leftarrow \mathbf{v}_i + \sum_{j \neq i} \mathbf{F}_{i \to j}, \qquad \mathbf{r}_i \leftarrow \mathbf{r}_i + \mathbf{v}_i,
+\]
+con $\mathbf{v}_i$ limitada a \texttt{NBODY\_VEL\_MAX} para que un
+encuentro cercano no dispare una fuente fuera de pantalla, y con un
+rebote amortiguado (factor \texttt{NBODY\_RESTITUTION}, menor a 1) al
+llegar a los bordes de la zona válida de inyección. Sumar
+$\mathbf{F}_{i \to j}$ para cada par de cuerpos cuesta $O(f^2)$
+evaluaciones por frame.
+
+Barnes-Hut \cite{barneshut1986} baja ese costo a $O(f \log f)$
+reemplazando la suma directa por un recorrido de árbol. El espacio se
+agrupa en un quadtree, una estructura donde cada nodo cubre una región
+cuadrada y tiene hasta 4 hijos, uno por cuadrante. La inserción
+(\texttt{bh\_insert}) es recursiva, cada nodo hoja vacío recibe
+directamente el primer cuerpo que le toca, y al llegar un segundo cuerpo
+a una hoja ya ocupada, esa hoja se subdivide en 4 y ambos cuerpos bajan a
+sus cuadrantes correspondientes. Un guardia de profundidad
+(\texttt{BH\_MAX\_DEPTH}) evita recursión infinita cuando 2 fuentes caen
+casi en el mismo punto, tratándolas como una sola masa combinada a esa
+profundidad. Cada nodo también acumula la masa total y el centro de masa
+de todo lo que contiene, actualizándolos según sube la recursión.
+
+Calcular la fuerza sobre un cuerpo (\texttt{bh\_accumulate}) recorre el
+árbol desde la raíz. Si el nodo actual es una hoja, o si está lo
+bastante lejos en relación a su propio tamaño, el criterio
+\[
+\frac{2s}{d} < \theta, \qquad \theta = \texttt{BH\_THETA} = 0.5,
+\]
+con $s$ el ancho del nodo y $d$ la distancia hacia su centro de masa, el
+algoritmo trata todo el nodo como un único cuerpo puntual ubicado en ese
+centro de masa, en vez de bajar a visitar cada uno de sus hijos por
+separado. $\theta$ más chico visita más nodos y se acerca más al
+resultado exacto de $O(f^2)$; $\theta$ más grande aproxima más agresivo y
+es más rápido. El Anexo 1, bloque 1, tiene el resto del detalle de
+implementación línea por línea.
+
+\newpage
 
 % ============================================================
 % CUERPO
 % ============================================================
-\section{Descripcion del problema}
+\section{Descripción del Problema}
 
 El programa dibuja un lienzo de al menos 640x480 px donde varias fuentes
 de tinta de colores inyectan color y momentum en un campo de velocidad.
-El campo de velocidad se resuelve cada frame (difusion, adveccion,
-proyeccion de Hodge) y arrastra la tinta, generando remolinos. Las fuentes
-mismas se mueven por atraccion gravitacional mutua y rebotan en los bordes
+El campo de velocidad se resuelve cada frame (difusión, advección,
+proyección de Hodge) y arrastra la tinta, generando remolinos. Las fuentes
+mismas se mueven por atracción gravitacional mutua y rebotan en los bordes
 de la malla.
 
-Parametros configurables por linea de comandos: resolucion de la malla
-(\texttt{-n}), cantidad de fuentes (\texttt{-f}), tamano de ventana
-(\texttt{-W}/\texttt{-H}), semilla aleatoria (\texttt{-s}), viscosidad
-(\texttt{-v}), difusion (\texttt{-d}) y pantalla completa (\texttt{-p}).
-Los valores por defecto y rangos validos estan en la Tabla
+El programa acepta varios parámetros por línea de comandos, entre ellos
+la resolución de la malla (\texttt{-n}), la cantidad de fuentes
+(\texttt{-f}), el tamaño de ventana (\texttt{-W}/\texttt{-H}), la
+semilla aleatoria (\texttt{-s}), la viscosidad (\texttt{-v}), la
+difusión (\texttt{-d}) y la pantalla completa (\texttt{-p}).
+Los valores por defecto y rangos válidos están en la Tabla
 \ref{tab:cli-params}.
 
 \begin{table}[ht]
@@ -164,196 +452,205 @@ Flag & Rango & Default \\
 \texttt{-d} & 0.0 -- 1.0 & 0.0001 \\
 \bottomrule
 \end{tabular}
-\caption{Parametros de linea de comandos.}
+\caption{Parámetros de línea de comandos.}
 \label{tab:cli-params}
 \end{table}
 
-\section{Metodologia: PCAM}
+\newpage
 
-Se aplico el metodo PCAM (Particionamiento, Comunicacion, Aglomeracion,
-Mapeo) para decidir que y como paralelizar:
+\section{Metodología PCAM}
+
+Se aplicó el método PCAM (Particionamiento, Comunicación, Aglomeración,
+Mapeo) para decidir qué y cómo paralelizar.
 
 \begin{description}[leftmargin=1.5cm]
-    \item[Particionamiento] La malla de la simulacion se piensa como un
-        conjunto de celdas independientes. Cada operacion por celda
-        (inyeccion de fuente, disipacion, adveccion, proyeccion, render)
+    \item[Particionamiento] La malla de la simulación se piensa como un
+        conjunto de celdas independientes. Cada operación por celda
+        (inyección de fuente, disipación, advección, proyección, render)
         es, en principio, una tarea separada.
-    \item[Comunicacion] La mayoria de las operaciones solo leen el estado
-        del frame anterior y escriben el nuevo, sin comunicacion entre
-        celdas dentro del mismo paso. La excepcion es el solver de
-        presion/difusion (Gauss-Seidel), que en su forma original lee
-        valores ya actualizados de celdas vecinas en la misma iteracion,
+    \item[Comunicación] La mayoría de las operaciones solo leen el estado
+        del frame anterior y escriben el nuevo, sin comunicación entre
+        celdas dentro del mismo paso. La excepción es el solver de
+        presión/difusión (Gauss-Seidel), que en su forma original lee
+        valores ya actualizados de celdas vecinas en la misma iteración,
         creando una dependencia estricta que impide paralelizar
         directamente.
-    \item[Aglomeracion] En vez de repartir celda por celda (overhead de
-        sincronizacion altisimo), se agrupan filas en bloques (\emph{chunks})
+    \item[Aglomeración] En vez de repartir celda por celda (overhead de
+        sincronización altísimo), se agrupan filas en bloques (\emph{chunks})
         que cada hilo procesa de corrido.
     \item[Mapeo] Los bloques se reparten entre los hilos disponibles via
-        \texttt{\#pragma omp parallel for}, con la politica de reparto
-        (\texttt{schedule}) elegida segun el tamano de la malla (ver
-        Seccion \ref{sec:schedule}).
+        \texttt{\#pragma omp parallel for}, con la política de reparto
+        (\texttt{schedule}) elegida según el tamaño de la malla (ver
+        Sección \ref{sec:schedule}).
 \end{description}
 
-\section{Version secuencial}
 
-La version secuencial (rama \texttt{sequential}) sirve de linea base fija
-para medir speedup: una vez medida, no se vuelve a tocar, ni un commit
-mas, para que el punto de comparacion no se mueva mientras se paraleliza.
+\newpage
 
-Usa Gauss-Seidel fila por fila para el solver de presion/difusion y
+\section{Versión secuencial}
+
+La versión secuencial (rama \texttt{sequential}) sirve de línea base fija
+para medir speedup. Usa Gauss-Seidel fila por fila para el solver de presión/difusión y
 fuerza bruta $O(f^2)$ para la gravedad del n-body (sin quadtree, cada
 fuente contra cada otra fuente). El resto de la estructura del programa
-(parseo de argumentos, asignacion de memoria, bucle principal, limpieza al
-salir) es identica a las versiones paralelas — los pasos del roadmap solo
+(parseo de argumentos, asignación de memoria, bucle principal, limpieza al
+salir) es idéntica a las versiones paralelas. Los pasos del roadmap solo
 tocan el algoritmo del solver y el n-body, no la estructura general.
 
-Antes de arrancar cualquier paralelizacion, esta version se probo:
-compila limpio con \texttt{-Wall -Wextra -O2 -std=c11}, corre sin
+Antes de arrancar cualquier paralelización, esta versión se probó.
+Compila limpio con \texttt{-Wall -Wextra -O2 -std=c11}, corre sin
 crashear para el rango completo de \texttt{-n} y \texttt{-f}, y
 \texttt{valgrind --leak-check=full} reporta 0 bytes perdidos y 0 errores
-(la limpieza al salir libera los 12 campos de la simulacion, las fuentes
+(la limpieza al salir libera los 12 campos de la simulación, las fuentes
 y las estrellas de fondo, ver \texttt{cleanup:} en \texttt{main.c}).
-Tambien se probo el parseo de argumentos con entradas invalidas
-(no numericas, fuera de rango, valores faltantes, flags desconocidos) —
+También se probó el parseo de argumentos con entradas invalidas
+(no numericas, fuera de rango, valores faltantes, flags desconocidos), 
 ver Anexo 2 para el detalle de \texttt{read\_int}/\texttt{read\_float}.
 
-\section{Paralelizacion iterativa}
+\newpage
 
-Siguiendo el espiritu de OpenMP como herramienta iterativa, la
-paralelizacion se hizo en pasos, cada uno en su propia rama, midiendo la
-misma bateria de pruebas despues de cada uno.
+\section{Paralelización iterativa}\label{sec:paralelizacion}
 
-\subsection{Paso 1: Barnes-Hut para n-body}
+Siguiendo el espíritu de OpenMP como herramienta iterativa, la
+paralelización se hizo en pasos, cada uno en su propia rama, midiendo la
+misma batería de pruebas después de cada uno.
 
-Se reemplazo el calculo de gravedad de fuerza bruta ($O(f^2)$) por un
-quadtree Barnes-Hut ($O(f \log f)$). Este paso es puramente algoritmico,
+\subsection{Paso 1. Barnes-Hut para n-body}
+
+Se reemplazó el cálculo de gravedad de fuerza bruta ($O(f^2)$) por un
+quadtree Barnes-Hut ($O(f \log f)$). Este paso es puramente algorítmico,
 sin OpenMP todavia. A las resoluciones de malla probadas, el solver de
 fluidos domina tanto el costo que el cambio no se nota en el FPS total
-(el n-body es una fraccion pequena del trabajo por frame).
+(el n-body es una fracción pequeña del trabajo por frame).
 
-\subsection{Paso 2: paralelizar los loops independientes}
+\subsection{Paso 2. Paralelizar los loops independientes}
 
-Se agrego \texttt{\#pragma omp parallel for} a los sitios donde cada celda
-de salida es independiente: inyeccion de fuentes, disipacion de tinta,
-adveccion, proyeccion de Hodge y render. El solver de presion/difusion
+Se agregó \texttt{\#pragma omp parallel for} a los sitios donde cada celda
+de salida es independiente, entre ellos la inyección de fuentes, la
+disipación de tinta, la advección, la proyección de Hodge y el render. El solver de presión/difusión
 seguia secuencial. Con 20 hilos, este paso ya da un salto importante de
 FPS (Tabla \ref{tab:master}), pero el techo sigue siendo el solver.
 
-\subsection{Paso 3: red-black Gauss-Seidel}
+\subsection{Paso 3. Red-black Gauss-Seidel}
 \label{sec:redblack}
 
-El cambio mas grande de toda la cadena. El solver de Gauss-Seidel original
+El cambio más grande de toda la cadena. El solver de Gauss-Seidel original
 lee y escribe la misma malla en el mismo barrido, celda por celda en
-orden, lo que crea una dependencia secuencial estricta. La solucion es un
-recorrido \emph{red-black}: se divide la malla en un tablero de ajedrez
+orden, lo que crea una dependencia secuencial estricta. La solución es un
+recorrido \emph{red-black}. La malla se divide en un tablero de ajedrez
 por paridad $(i+j) \bmod 2$. Los 4 vecinos de una celda de un color son
 siempre del color opuesto, entonces todas las celdas del mismo color se
-pueden actualizar en paralelo sin pisarse entre si. Cada iteracion pasa a
-ser: actualizar todas las rojas (barrera implicita), actualizar todas las
-negras (barrera implicita).
+pueden actualizar en paralelo sin estorbarse entre si. Cada iteración pasa a
+tener 2 etapas, primero actualizar todas las rojas (con una barrera
+implícita) y luego actualizar todas las negras (otra barrera implícita).
 
 Este cambio finalmente paraleliza el hotspot principal del programa. El
-resultado es el salto de rendimiento mas grande del proyecto: a la
-configuracion default ($n=256$, $f=6$), el FPS pasa de 25.20 (Paso 2) a
+resultado es el salto de rendimiento más grande del proyecto. En la
+configuración default ($n=256$, $f=6$), el FPS pasa de 25.20 (Paso 2) a
 88.27 (Paso 3), un $3.5\times$ adicional.
 
-\subsection{Paso 4: ajuste de \texttt{schedule}}
+\subsection{Paso 4. Ajuste de \texttt{schedule}}
 \label{sec:schedule}
 
 Con el hotspot ya paralelo, se probo si el \texttt{schedule(dynamic, 16)}
-usado en todo el codigo era la mejor eleccion. Se cambiaron
+usado en todo el código era la mejor elección. Se cambiaron
 temporalmente los \texttt{\#pragma} a \texttt{schedule(runtime)} (que se
 puede configurar sin recompilar via la variable de entorno
 \texttt{OMP\_SCHEDULE}) y se barrio \texttt{static}, \texttt{dynamic} y
-\texttt{guided} con distintos tamanos de chunk, en malla chica y malla
+\texttt{guided} con distintos tamaños de chunk, en malla chica y malla
 grande (Tabla \ref{tab:schedule-sweep}).
 
-El resultado principal: el \texttt{dynamic, 16} usado en todo el codigo es
-buena eleccion en malla chica, pero es la peor opcion razonable en malla
+El resultado principal: el \texttt{dynamic, 16} usado en todo el código es
+buena elección en malla chica, pero es la peor opción razonable en malla
 grande. \texttt{static} (con el chunk por defecto del compilador) le saca
 $2.5\times$ a \texttt{dynamic, 16} en $n=700$ (54.47 vs. 21.93 FPS).
 
-Con este resultado, se aplico \texttt{schedule(static)} de verdad al
-codigo de la rama \texttt{04-\allowbreak schedule-\allowbreak tuning},
+Con este resultado, se aplicó \texttt{schedule(static)} de verdad al
+código de la rama \texttt{04-\allowbreak schedule-\allowbreak tuning},
 reemplazando el \texttt{schedule(dynamic,\allowbreak\ 16)} hardcodeado en
-todos los sitios del catalogo.
+todos los sitios del catálogo.
 
-Al remedir la bateria estandar con el cambio real (no solo con
+Al remedir la batería estándar con el cambio real (no solo con
 \texttt{OMP\_SCHEDULE}), el resultado es un \textbf{tradeoff}, no una
 mejora universal. En malla chica \texttt{static} pierde un poco contra el
-\texttt{dynamic, 16} anterior: la fila B6 baja de 88.27 a 80.68 FPS,
-alrededor de un 8.6\% menos. En malla grande, en cambio, gana fuerte: la
+\texttt{dynamic, 16} anterior. La fila B6 baja de 88.27 a 80.68 FPS,
+alrededor de un 8.6\% menos. En malla grande, en cambio, gana fuerte. La
 fila I6 sube de 28.32 a 53.47 FPS (casi el doble) y la fila C6 sube de
-45.79 a 68.57 FPS. Ver Tabla \ref{tab:master} para los numeros completos.
+45.79 a 68.57 FPS. Ver Tabla \ref{tab:master} para los números completos.
 
-\subsection{Paso 5: ajuste de \texttt{collapse(2)} (cancelado)}
+\subsection{Paso 6. Flags de compilacion}
 
-Se planeo comparar \texttt{collapse(2)} contra paralelizar solo el loop
-externo, para ver el efecto en mallas chicas (menos filas que nucleos
-disponibles). Este paso se cancelo antes de obtener numeros confiables y
-no se incluye en los resultados de este informe.
-
-\subsection{Paso 6: flags de compilacion}
-
-Se probo cambiar el flag de optimizacion del compilador de \texttt{-O2}
+Se probo cambiar el flag de optimización del compilador de \texttt{-O2}
 (usado hasta ahora) a \texttt{-O3}, y adicionalmente \texttt{-march=native}
-para autovectorizacion especifica del CPU de la maquina de pruebas. Los
-resultados estan en la Tabla \ref{tab:o3}.
+para autovectorizacion especifica del CPU de la maquina de pruebas.
+Medido sobre el código actual (con \texttt{schedule(static)} ya
+aplicado, no el \texttt{dynamic, 16} viejo). Los resultados están en la
+Tabla \ref{tab:o3}.
 
-\texttt{-O3} da una ganancia real de $\sim$11\% en malla grande sobre
-\texttt{-O2}, sin costo en malla chica. \texttt{-march=native} no aporta
-nada adicional sobre \texttt{-O3} solo, lo que sugiere que los loops
-calientes no se benefician de registros vectoriales mas anchos en este
-CPU, o que el set de instrucciones base que asume GCC ya alcanza.
+Con \texttt{static} ya puesto, las 3 builds quedan dentro de un rango de
+pocos FPS entre sí en malla grande (la fila de \texttt{-O2} en la Tabla
+\ref{tab:o3} usa la mejor de 3 corridas repetidas, 49.82, 51.22 y 50.28
+FPS, medidas en distintos momentos). Ese rango de variación entre
+corridas del mismo build es casi tan ancho como la diferencia entre las
+3 builds, así que no hay nada significativo que concluir entre
+\texttt{-O2}, \texttt{-O3} y \texttt{-march=native} a esta resolución de
+medición. Una medición anterior (hecha todavía con el
+\texttt{schedule(dynamic, 16)} viejo) había mostrado a \texttt{-O3} con
+una ganancia mayor en malla grande, pero dado el nivel de ruido visto
+acá, esa diferencia tampoco se puede tomar como concluyente sin
+promediar varias corridas.
 
-\section{Mecanismos de sincronizacion}
+\newpage
+
+\section{Mecanismos de sincronización}
 
 \begin{itemize}
     \item \textbf{\texttt{\#pragma omp parallel for}}: la forma principal
         de paralelismo en el proyecto. Reparte las iteraciones de un loop
         \texttt{for} entre los hilos disponibles, con una barrera
-        implicita al final (todos los hilos esperan a que termine el
-        ultimo antes de seguir).
+        implícita al final (todos los hilos esperan a que termine el
+        último antes de seguir).
     \item \textbf{\texttt{\#pragma omp parallel} + \texttt{\#pragma omp
-        for}}: usado en el solver (Seccion \ref{sec:redblack}) para abrir
-        una sola region paralela que envuelve las 20 iteraciones del
+        for}}: usado en el solver (Sección \ref{sec:redblack}) para abrir
+        una sola región paralela que envuelve las 20 iteraciones del
         Gauss-Seidel red-black, en vez de abrir/cerrar el team de hilos 40
-        veces por frame (costo fijo de creacion de hilos evitado).
-    \item \textbf{\texttt{\#pragma omp single}}: dentro de la region
-        paralela del solver, aplica la condicion de frontera con un solo
-        hilo mientras el resto espera en la barrera implicita del
+        veces por frame evitando el costo fijo de creación de hilos.
+    \item \textbf{\texttt{\#pragma omp single}}: dentro de la región
+        paralela del solver, aplica la condición de frontera con un solo
+        hilo mientras el resto espera en la barrera implícita del
         \texttt{single}, evitando que varios hilos escriban la misma
         celda de borde a la vez.
-    \item \textbf{\texttt{schedule(dynamic, chunk)}}: politica de reparto
-        de trabajo por defecto usada en todo el codigo. Reparte bloques
+    \item \textbf{\texttt{schedule(dynamic, chunk)}}: política de reparto
+        de trabajo por defecto usada en todo el código. Reparte bloques
         de \texttt{chunk} iteraciones bajo demanda: un hilo que termina su
         bloque pide el siguiente en vez de quedarse ocioso esperando a
-        los demas. La Seccion \ref{sec:schedule} muestra que no siempre es
-        la mejor opcion.
+        los demas. La Sección \ref{sec:schedule} muestra que no siempre es
+        la mejor opción.
     \item \textbf{\texttt{collapse(2)}}: en los loops anidados de
-        adveccion, proyeccion y render, funde las dos dimensiones (fila,
-        columna) en un solo rango repartible. Sin esto, una malla mas
-        angosta que la cantidad de hilos dejaria nucleos sin trabajo.
+        advección, proyección y render, funde las dos dimensiones (fila,
+        columna) en un solo rango repartible. Sin esto, una malla más
+        angosta que la cantidad de hilos dejaria núcleos sin trabajo.
     \item \textbf{Variables privadas (\texttt{private(...)})}: cada hilo
         necesita su propia copia de las variables escalares temporales
         del cuerpo del loop (por ejemplo, coordenadas de origen
-        interpoladas en adveccion). Sin esto, los hilos pisarian el mismo
-        valor compartido y corromperian el resultado.
+        interpoladas en advección). 
 \end{itemize}
 
-No se usaron mutex ni secciones criticas explicitas: el diseno evita
-condiciones de carrera por construccion (cada celda de salida se escribe
-una sola vez, por un solo hilo, en cada paso), asi que las barreras
+No se usaron mutex ni secciones críticas explícitas. El diseño evita
+condiciones de carrera por construcción (cada celda de salida se escribe
+una sola vez, por un solo hilo, en cada paso), así que las barreras
 implicitas de \texttt{omp for} y el \texttt{single} para la frontera son
 suficientes.
 
-\section{Resultados}
+\newpage
+
+\section{Resultados}\label{sec:resultados}
 
 \subsection{Tabla maestra}
 
-La Tabla \ref{tab:master} muestra el FPS promedio por configuracion (malla
+La Tabla \ref{tab:master} muestra el FPS promedio por configuración (malla
 $\times$ fuentes), en cada paso de la cadena, con 20 hilos donde aplica.
-Metodologia: cada fila se corrio con semilla fija (\texttt{-s 42}), se
+Metodología: cada fila se corrió con semilla fija (\texttt{-s 42}), se
 promedio el FPS ignorando las primeras lineas de calentamiento.
 
 \begin{table}[ht]
@@ -381,12 +678,12 @@ F (n=256, f=64)   & 11.39 & 11.39 & 25.36  & 87.28 & n/m \\
 G (n=256, f=256)  & 11.37 & 11.38 & 25.30  & 85.07 & n/m \\
 \bottomrule
 \end{tabular}
-\caption{FPS promedio por paso de la cadena de paralelizacion. n/m = no
+\caption{FPS promedio por paso de la cadena de paralelización. n/m = no
 medido con el schedule nuevo todavia.}
 \label{tab:master}
 \end{table}
 
-En la configuracion default ($n=256$, $f=6$), el FPS pasa de 10.52
+En la configuración default ($n=256$, $f=6$), el FPS pasa de 10.52
 (secuencial) a 88.27 (Paso 3), un speedup acumulado de $\sim 8.4\times$.
 El Paso 4 (\texttt{static}) es un tradeoff frente a Paso 3: pierde un
 poco en malla chica pero gana fuerte en malla grande (hasta
@@ -396,8 +693,8 @@ $\sim +89\%$ en n=700, Tabla \ref{tab:master}).
 
 La Tabla \ref{tab:threads} muestra el FPS variando \texttt{OMP\_NUM\_THREADS}
 en la fila B (n=256, f=6). Antes del Paso 3 (solver todavia secuencial), el
-escalado se estanca alrededor de $2.6\times$ (techo de Amdahl: el solver
-secuencial limita cuanto puede acelerar el resto). Desde el Paso 3 en
+escalado se estanca alrededor de $2.6\times$ (techo de Amdahl, el solver
+secuencial limita cuánto puede acelerar el resto). Desde el Paso 3 en
 adelante, con el solver ya paralelo, el escalado sube a $\sim 6\times$.
 
 \begin{table}[ht]
@@ -418,7 +715,7 @@ Hilos & FPS \texttt{02-omp-loops} & FPS \texttt{03-omp-solver} & FPS \texttt{04-
 \label{tab:threads}
 \end{table}
 
-Tambien se corrio la misma curva en una malla grande (n=700, f=12),
+También se corrió la misma curva en una malla grande (n=700, f=12),
 comparando el \texttt{schedule} actual contra \texttt{static} (el mejor
 encontrado para malla grande, Tabla \ref{tab:threads-700}). Con
 \texttt{static}, 20 hilos da 48.11 FPS contra los 34.59 FPS del
@@ -443,7 +740,7 @@ Hilos & FPS \texttt{static} & FPS \texttt{dynamic,16} (actual) \\
 \label{tab:threads-700}
 \end{table}
 
-Con \texttt{static} el pico esta en 16 hilos, no en 20: a 700 filas, el
+Con \texttt{static} el pico está en 16 hilos, no en 20: a 700 filas, el
 reparto estatico en 20 partes no cae tan parejo como en 16.
 
 \subsection{Barrido de \texttt{schedule}/chunk}
@@ -454,13 +751,13 @@ reparto estatico en 20 partes no cae tan parejo como en 16.
 \toprule
 \texttt{OMP\_SCHEDULE} & FPS n=256 & FPS n=700 \\
 \midrule
-\texttt{static} (default)          & 83.40 & \textbf{54.47} \\
+\texttt{static} (default, actual)  & 83.40 & \textbf{54.47} \\
 \texttt{static,4}                  & 83.57 & 43.01 \\
 \texttt{static,16}                 & 84.53 & 46.87 \\
 \texttt{static,64}                 & 72.89 & 44.42 \\
 \texttt{dynamic,1}                 & 31.19 & 5.55  \\
 \texttt{dynamic,4}                 & 64.36 & 15.77 \\
-\texttt{dynamic,16} (actual)       & 87.58 & 21.93 \\
+\texttt{dynamic,16} (viejo default) & 87.58 & 21.93 \\
 \texttt{dynamic,64}                & 76.88 & 2.02  \\
 \texttt{guided} (default)          & \textbf{96.80} & 49.42 \\
 \texttt{guided,16}                 & 94.71 & 3.43  \\
@@ -476,14 +773,15 @@ reparto estatico en 20 partes no cae tan parejo como en 16.
 \centering
 \begin{tabular}{lrr}
 \toprule
-Build & FPS n=256,f=6 & FPS n=700,f=12 \\
+Build & FPS n=256,f=6 & FPS n=700,f=6 \\
 \midrule
-\texttt{-O2} (actual)        & 83.74 & 32.18 \\
-\texttt{-O3}                 & 83.16 & 35.72 \\
-\texttt{-O3 -march=native}   & 84.03 & 35.76 \\
+\texttt{-O2} (actual)        & 80.18 & 51.22 \\
+\texttt{-O3}                 & 78.94 & 46.41 \\
+\texttt{-O3 -march=native}   & 75.52 & 42.72 \\
 \bottomrule
 \end{tabular}
-\caption{FPS por flag de optimizacion, 20 hilos.}
+\caption{FPS por flag de optimización, 20 hilos, sobre el código actual
+(\texttt{schedule(static)} ya aplicado).}
 \label{tab:o3}
 \end{table}
 
@@ -493,47 +791,52 @@ Build & FPS n=256,f=6 & FPS n=700,f=12 \\
 \section{Conclusiones}
 
 \begin{itemize}
-    \item Paralelizar el solver de presion/difusion (red-black
-        Gauss-Seidel) fue, por lejos, el cambio de mayor impacto: FPS
+    \item Paralelizar el solver de presión/difusión (red-black
+        Gauss-Seidel) fue, por lejos, el cambio de mayor impacto. El FPS
         default subio de 25.20 a 88.27 ($3.5\times$), y la escalabilidad
         por hilos paso de $\sim 2.6\times$ a $\sim 6\times$.
     \item Antes de paralelizar el hotspot real, paralelizar el resto del
         programa (Paso 2) ayuda, pero el techo de Amdahl limita cuanto se
         puede ganar mientras el cuello de botella siga secuencial.
-    \item La eleccion de \texttt{schedule} de OpenMP importa mas de lo
+    \item La elección de \texttt{schedule} de OpenMP importa más de lo
         esperado y no tiene un ganador universal: \texttt{dynamic, 16}
         era mejor en malla chica, \texttt{static} gana fuerte en malla
         grande ($2.5\times$ en el barrido, hasta $+89\%$ al aplicarlo de
-        verdad al codigo). Se aplico \texttt{static} a la rama
+        verdad al código). Se aplicó \texttt{static} a la rama
         \texttt{04-schedule-tuning}; el resultado real confirma el
-        tradeoff: pierde $\sim$8\% en malla chica para ganar hasta
+        tradeoff, pierde $\sim$8\% en malla chica para ganar hasta
         $\sim$89\% en malla grande.
-    \item Cambiar \texttt{-O2} a \texttt{-O3} da una ganancia gratuita de
-        $\sim$11\% en malla grande sin tocar codigo. \texttt{-march=native}
-        no aporta nada extra sobre \texttt{-O3} en este CPU.
+    \item Con \texttt{static} ya aplicado, la diferencia entre
+        \texttt{-O2}, \texttt{-O3} y \texttt{-march=native} quedó dentro
+        del ruido de medición de una sola corrida (repetir \texttt{-O2}
+        varias veces movió el resultado casi tanto como el que supuesto
+        cambio de build). No hay evidencia concluyente de que alguna
+        build sea mejor a esta resolución de medición.
     \item Barnes-Hut para el n-body no se nota en el FPS a las
         resoluciones probadas porque el solver de fluidos domina el costo
-        total; el algoritmo de n-body es una fraccion pequena del trabajo
+        total; el algoritmo de n-body es una fraccion pequeña del trabajo
         por frame.
 \end{itemize}
 
 \section{Recomendaciones}
 
 \begin{itemize}
-    \item Ya se aplico \texttt{static} en \texttt{04-schedule-tuning}. Si
+    \item Ya se aplicó \texttt{static} en \texttt{04-schedule-tuning}. Si
         el uso real del programa favorece mallas chicas ($n \leq 256$),
         vale la pena reconsiderar, ya que ahi \texttt{dynamic, 16} sigue
         siendo mejor; para mallas grandes, \texttt{static} es la mejor
-        eleccion medida. Una opcion futura es dejarlo configurable via
+        elección medida. Una opción futura es dejarlo configurable via
         \texttt{schedule(runtime)} y elegir en base a \texttt{-n} al
         arrancar.
-    \item Cambiar \texttt{-O2} a \texttt{-O3} en el \texttt{Makefile}: es
-        una ganancia gratuita sin riesgo.
-    \item Retomar el Paso 5 (\texttt{collapse(2)}) con una metodologia mas
+    \item Cambiar \texttt{-O2} a \texttt{-O3} en el \texttt{Makefile} no
+        mostró una ganancia distinguible del ruido de una sola corrida.
+        Si se quiere una respuesta real, hay que promediar varias
+        corridas por build antes de decidir, no una sola medición.
+    \item Retomar el Paso 5 (\texttt{collapse(2)}) con una metodología más
         controlada (por ejemplo, sin renderizado en pantalla completa) si
-        se quiere ese numero para mallas chicas con pocos nucleos.
+        se quiere ese número para mallas chicas con pocos núcleos.
     \item Para mallas mayores a $n=1024$ o cantidades de fuentes mayores a
-        256, medir de nuevo: el comportamiento del schedule optimo podria
+        256, medir de nuevo, ya que el comportamiento del schedule óptimo podría
         cambiar fuera del rango probado.
 \end{itemize}
 
@@ -553,7 +856,7 @@ force-calculation algorithm}. Nature, 324(6096), 446-449.
 
 \bibitem{ompspec}
 OpenMP Architecture Review Board. (2021). \emph{OpenMP Application
-Programming Interface, Version 5.2}.
+Programming Interface, Versión 5.2}.
 \url{https://www.openmp.org/specifications/}
 
 \bibitem{chapman2007}
@@ -567,7 +870,7 @@ Portable Shared Memory Parallel Programming}. MIT Press.
 % ============================================================
 \clearpage
 \appendix
-\section{Anexo 1: Diagrama de flujo del programa}
+\section{Anexo 1. Diagrama de flujo del programa}
 
 \begin{center}
 \resizebox{!}{0.83\textheight}{%
@@ -581,9 +884,9 @@ Portable Shared Memory Parallel Programming}. MIT Press.
 
 \node[box] (start) {Inicio};
 \node[box, below=of start] (args) {Captura de argumentos\\(\texttt{parse\_arguments})};
-\node[decision, below=of args] (argsok) {\textcolor{black}{args validos?}};
+\node[decision, below=of args] (argsok) {\textcolor{black}{args válidos?}};
 \node[box, right=of argsok] (argserr) {Imprime error /\\ayuda y termina};
-\node[box, below=of argsok] (alloc) {Programacion defensiva:\\reserva de memoria\\(\texttt{allocate\_fields}, malloc)};
+\node[box, below=of argsok] (alloc) {Programación defensiva:\\reserva de memoria\\(\texttt{allocate\_fields}, malloc)};
 \node[decision, below=of alloc] (allocok) {memoria OK?};
 \node[box, right=of allocok] (allocerr) {Libera lo reservado\\y termina};
 \node[box, below=of allocok] (sdl) {Inicializa SDL,\\ventana, renderer};
@@ -591,7 +894,7 @@ Portable Shared Memory Parallel Programming}. MIT Press.
 
 \node[par, below=of loop] (nbody) {Mueve fuentes (n-body,\\Barnes-Hut)};
 \node[par, below=of nbody] (inject) {Inyecta tinta/fuerza\\(\texttt{inject\_sources})};
-\node[par, below=of inject] (vel) {Resuelve velocidad\\(seccion paralela:\\difusion + proyeccion,\\red-black Gauss-Seidel)};
+\node[par, below=of inject] (vel) {Resuelve velocidad\\(sección paralela:\\difusión + proyección,\\red-black Gauss-Seidel)};
 \node[par, below=of vel] (advect) {Advecta tinta\\(\texttt{collapse(2)})};
 \node[par, below=of advect] (dissip) {Disipa tinta};
 \node[par, below=of dissip] (render) {Renderiza frame\\(\texttt{collapse(2)})};
@@ -623,105 +926,105 @@ Portable Shared Memory Parallel Programming}. MIT Press.
 \end{center}
 
 Los bloques en azul son las secciones paralelizadas con OpenMP. La
-sincronizacion entre ellas es implicita: cada \texttt{\#pragma omp for}
-tiene una barrera al final, y la seccion de velocidad usa
-\texttt{\#pragma omp single} para la condicion de frontera dentro de su
-propia region paralela (ver Seccion \ref{sec:redblack}).
+sincronización entre ellas es implícita: cada \texttt{\#pragma omp for}
+tiene una barrera al final, y la sección de velocidad usa
+\texttt{\#pragma omp single} para la condición de frontera dentro de su
+propia región paralela (ver Sección \ref{sec:redblack}).
 
 \subsection*{Que pasa dentro de cada bloque, un frame a la vez}
 
 El diagrama de arriba muestra el orden, pero no el detalle de cada
-bloque. Esta seccion entra a ese detalle, bloque por bloque, en el orden
+bloque. Esta sección entra a ese detalle, bloque por bloque, en el orden
 real de ejecucion dentro de \texttt{main.c}.
 
-\paragraph{1. Mueve fuentes (n-body, Barnes-Hut) — \texttt{update\_nbody\_sources}.}
+\paragraph{1. Mueve fuentes (n-body, Barnes-Hut, \texttt{update\_nbody\_sources}).}
 Reconstruye un quadtree desde cero cada frame (las fuentes se mueven, no
 tiene sentido mantenerlo entre frames). Primero inserta las $f$ fuentes
 una por una (\texttt{bh\_insert}, recursivo, subdivide un nodo hoja en 4
-cuando cae una segunda fuente adentro). Despues, para cada fuente,
-recorre el arbol (\texttt{bh\_accumulate}): si un nodo esta lo bastante
-lejos en relacion a su tamano ($\theta = 0.5$), se trata como un solo
-punto de masa en vez de bajar a sus 4 hijos — eso es lo que baja el costo
-de $O(f^2)$ a $O(f \log f)$. Con la aceleracion acumulada, integra
-velocidad y posicion, y aplica un rebote amortiguado si una fuente
-llegaria a salir del area valida de inyeccion. Esta etapa sigue
-secuencial en toda la cadena: el arbol se construye una vez por frame y
+cuando cae una segunda fuente adentro). Después, para cada fuente,
+recorre el árbol (\texttt{bh\_accumulate}), y si un nodo está lo bastante
+lejos en relación a su tamaño ($\theta = 0.5$), se trata como un solo
+punto de masa en vez de bajar a sus 4 hijos, y eso es lo que baja el costo
+de $O(f^2)$ a $O(f \log f)$. Con la aceleración acumulada, integra
+velocidad y posición, y aplica un rebote amortiguado si una fuente
+llegaria a salir del area valida de inyección. Esta etapa sigue
+secuencial en toda la cadena. El árbol se construye una vez por frame y
 depende del resultado del frame anterior en cada insercion, no vale la
-pena paralelizarla a la cantidad de fuentes que se usan tipicamente
+pena paralelizarla a la cantidad de fuentes que se usan típicamente
 ($f \leq 256$).
 
-\paragraph{2. Inyecta tinta/fuerza — \texttt{inject\_sources}.}
-Primero limpia los buffers "previous" de velocidad y tinta (van a
+\paragraph{2. Inyecta tinta/fuerza (\texttt{inject\_sources}).}
+Primero limpia los buffers ``previous'' de velocidad y tinta (van a
 recibirse de nuevo este frame). Para cada fuente, calcula dos gaussianas
-centradas en su posicion (continua, no la celda entera): una ancha que
-da el color/empuje general, y una angosta ("core") que agrega un nucleo
+centradas en su posición (continua, no la celda entera), una ancha que
+da el color/empuje general, y una angosta (``core'') que agrega un núcleo
 brillante casi blanco en el centro. La direccion del chorro rota con
 \texttt{cos(phase)}/\texttt{sin(phase)}, generando el efecto espiral. No
-esta paralelizada: el radio de inyeccion por fuente es chico (unas pocas
-celdas) y varias fuentes pueden solapar en la misma celda si estan cerca,
-lo que forzaria una seccion critica o reduccion — no vale la pena al
-tamano tipico de \texttt{-f}.
+está paralelizada, ya que el radio de inyección por fuente es chico (unas pocas
+celdas) y varias fuentes pueden solapar en la misma celda si están cerca,
+lo que forzaria una sección crítica o reducción, algo que no vale la pena al
+tamaño típico de \texttt{-f}.
 
-\paragraph{3. Resuelve velocidad — \texttt{velocity\_step}.}
-El bloque mas caro del frame, y donde vive el paralelismo real. Es una
-secuencia fija: fuerza $\to$ difusion $\to$ proyeccion $\to$
-autoadveccion $\to$ proyeccion otra vez (difundir y autoadvectar cada uno
+\paragraph{3. Resuelve velocidad (\texttt{velocity\_step}).}
+El bloque más caro del frame, y donde vive el paralelismo real. Es una
+secuencia fija, primero fuerza $\to$ difusión $\to$ proyección $\to$
+autoadveccion $\to$ proyección otra vez (difundir y autoadvectar cada uno
 reintroduce algo de divergencia, por eso se proyecta dos veces). La
-difusion y cada proyeccion llaman a \texttt{solve\_linear}, que abre
-\emph{una sola} region \texttt{\#pragma omp parallel} y adentro corre las
-20 iteraciones de Gauss-Seidel red-black: 20 veces (actualizar celdas
-rojas, barrera implicita, actualizar celdas negras, barrera implicita).
-Abrir la region paralela una sola vez en vez de 40 veces (20 iteraciones
+difusión y cada proyección llaman a \texttt{solve\_linear}, que abre
+\emph{una sola} región \texttt{\#pragma omp parallel} y adentro corre las
+20 iteraciones de Gauss-Seidel red-black, 20 veces (actualizar celdas
+rojas, barrera implícita, actualizar celdas negras, barrera implícita).
+Abrir la región paralela una sola vez en vez de 40 veces (20 iteraciones
 $\times$ 2 colores) evita el costo fijo de crear el team de hilos
-repetidamente, que en mallas chicas se nota. La condicion de frontera se
-aplica con \texttt{\#pragma omp single} dentro de esa misma region: un
-solo hilo la escribe mientras los demas esperan en la barrera implicita
-del \texttt{single}, sin salir de la region paralela.
+repetidamente, que en mallas chicas se nota. La condición de frontera se
+aplica con \texttt{\#pragma omp single} dentro de esa misma región: un
+solo hilo la escribe mientras los demas esperan en la barrera implícita
+del \texttt{single}, sin salir de la región paralela.
 
-\paragraph{4. Advecta tinta — \texttt{ink\_step} (una vez por canal R, G, B).}
-Adveccion semi-Lagrangiana: para cada celda destino, calcula de donde
+\paragraph{4. Advecta tinta (\texttt{ink\_step}, una vez por canal R, G, B).}
+Advección semi-Lagrangiana. Para cada celda destino, calcula de donde
 vino ese fluido dando un paso hacia atras a lo largo de su propio campo
 de velocidad, y agarra el valor de ahi por interpolacion bilineal de las
 4 celdas reales alrededor de ese punto (fraccional). Cada celda destino
-solo lee el campo anterior, nunca lo escribe, asi que es paralelizable
-sin ningun cuidado extra. Usa \texttt{\#pragma omp parallel for
+solo lee el campo anterior, nunca lo escribe, así que es paralelizable
+sin ningún cuidado extra. Usa \texttt{\#pragma omp parallel for
 collapse(2)}: funde el loop de \texttt{i} y el de \texttt{j} en un solo
 rango repartible, para que una malla angosta (menos filas que hilos)
 siga repartiendo trabajo entre todos. Se llama 3 veces (una por canal de
 color), cada una independiente de las otras.
 
-\paragraph{5. Disipa tinta — \texttt{dissipate\_ink}.}
+\paragraph{5. Disipa tinta (\texttt{dissipate\_ink}).}
 Multiplica cada celda de cada canal por \texttt{DISSIPATION} (0.995), sin
 eso la tinta se acumularia hasta saturar la pantalla a blanco. Loop plano
 sobre \texttt{celdas\_totales}, cada celda independiente,
 \texttt{\#pragma omp parallel for}.
 
-\paragraph{6. Renderiza frame — \texttt{render\_ink}.}
-Recorre cada pixel de la textura (no cada celda de la malla — la
+\paragraph{6. Renderiza frame (\texttt{render\_ink}).}
+Recorre cada pixel de la textura (no cada celda de la malla, ya que la
 resolucion de ventana suele ser mayor que \texttt{-n}), interpola
-bilinealmente la densidad de tinta en esa posicion, aplica un mapeo de
+bilinealmente la densidad de tinta en esa posición, aplica un mapeo de
 tono estilo Reinhard y un ajuste de saturacion, y calcula el canal alfa a
-partir del brillo maximo de los 3 canales (para que el fondo se vea donde
-no hay tinta). Tambien usa \texttt{collapse(2)}: sin el, con una ventana
-mas angosta que alta (o viceversa) los hilos no se repartirian parejo
+partir del brillo máximo de los 3 canales (para que el fondo se vea donde
+no hay tinta). También usa \texttt{collapse(2)}: sin el, con una ventana
+más angosta que alta (o viceversa) los hilos no se repartirían parejo
 solo sobre el loop externo.
 
 \paragraph{7. Mide FPS y actualiza pantalla.}
 Cuenta frames acumulados y, cada $\sim$0.5s de tiempo real, calcula el
 promedio, lo imprime a \texttt{stdout} y lo pone en el titulo de la
-ventana. No es parte del calculo de la simulacion, es solo
-instrumentacion.
+ventana. No es parte del cálculo de la simulación, es solo
+instrumentación.
 
 % ============================================================
-% ANEXO 2: CATALOGO DE FUNCIONES
+% ANEXO 2: CATÁLOGO DE FUNCIONES
 % ============================================================
 \clearpage
-\section{Anexo 2: Catalogo de funciones}
+\section{Anexo 2. Catálogo de funciones}
 
 \subsection*{\texttt{config.c}}
 \begin{longtable}{L{4cm}L{4.1cm}L{2.2cm}L{3.7cm}}
 \toprule
-Funcion & Entradas & Salidas & Descripcion \\
+Función & Entradas & Salidas & Descripción \\
 \midrule
 \texttt{parse\_arguments} & \texttt{argc} (int), \texttt{argv} (char**) & \texttt{config} (Config*, por referencia), retorna int (1 ok, 0 error, -1 ayuda) & Recorre \texttt{argv} y llena \texttt{config} con los valores validados. \\
 \texttt{read\_int} & \texttt{text} (char*), rango min/max & \texttt{out} (int*), retorna 1/0 & Convierte texto a int validando formato y rango. \\
@@ -733,9 +1036,9 @@ Funcion & Entradas & Salidas & Descripcion \\
 \subsection*{\texttt{fields.c}}
 \begin{longtable}{L{4cm}L{4.1cm}L{2.2cm}L{3.7cm}}
 \toprule
-Funcion & Entradas & Salidas & Descripcion \\
+Función & Entradas & Salidas & Descripción \\
 \midrule
-\texttt{allocate\_fields} & \texttt{fields} (FluidFields*), \texttt{resolution} (int) & retorna int (1 ok, 0 error) & Reserva memoria para los 12 campos de la simulacion (velocidad, tinta, presion, divergencia). \\
+\texttt{allocate\_fields} & \texttt{fields} (FluidFields*), \texttt{resolution} (int) & retorna int (1 ok, 0 error) & Reserva memoria para los 12 campos de la simulación (velocidad, tinta, presión, divergencia). \\
 \texttt{free\_fields} & \texttt{fields} (FluidFields*) & ninguna & Libera los 12 campos y pone los punteros en NULL. \\
 \texttt{clear\_fields} & \texttt{fields} (FluidFields*) & ninguna & Pone todos los campos en cero (usado al reiniciar con la tecla R). \\
 \bottomrule
@@ -744,9 +1047,9 @@ Funcion & Entradas & Salidas & Descripcion \\
 \subsection*{\texttt{sources.c}}
 \begin{longtable}{L{4cm}L{4.1cm}L{2.2cm}L{3.7cm}}
 \toprule
-Funcion & Entradas & Salidas & Descripcion \\
+Función & Entradas & Salidas & Descripción \\
 \midrule
-\texttt{init\_sources} & \texttt{sources} (InkSource*), \texttt{count}, \texttt{resolution} (int) & ninguna & Inicializa posicion, velocidad, masa, color y fuerza de cada fuente. \\
+\texttt{init\_sources} & \texttt{sources} (InkSource*), \texttt{count}, \texttt{resolution} (int) & ninguna & Inicializa posición, velocidad, masa, color y fuerza de cada fuente. \\
 \texttt{inject\_sources} & \texttt{sources} (InkSource*), \texttt{count} (int), \texttt{fields} (FluidFields*), \texttt{aspect} (float) & ninguna (modifica \texttt{fields}) & Deposita tinta y momentum de cada fuente en un vecindario gaussiano. \\
 \texttt{dissipate\_ink} & \texttt{fields} (FluidFields*) & ninguna & Reduce la tinta de cada celda por un factor fijo (paralelo con \texttt{omp parallel for}). \\
 \bottomrule
@@ -755,41 +1058,41 @@ Funcion & Entradas & Salidas & Descripcion \\
 \subsection*{\texttt{solver.c}}
 \begin{longtable}{L{4cm}L{4.1cm}L{2.2cm}L{3.7cm}}
 \toprule
-Funcion & Entradas & Salidas & Descripcion \\
+Función & Entradas & Salidas & Descripción \\
 \midrule
 \texttt{apply\_boundary} & \texttt{bnd\_type} (int), \texttt{field} (float*) & ninguna & Aplica condiciones de frontera (rebote en paredes). \\
-\texttt{add\_source} & \texttt{dest}, \texttt{source} (float*), \texttt{dt} (float), \texttt{n} (int) & ninguna & Suma el termino fuente a cada celda (paralelo). \\
-\texttt{relax\_color} & \texttt{field}, \texttt{field\_prev} (float*), \texttt{a}, \texttt{inv\_c} (float), \texttt{parity} (int) & ninguna & Actualiza las celdas de una paridad del tablero red-black (paralelo, dentro de region \texttt{omp parallel}). \\
-\texttt{solve\_linear} & \texttt{bnd\_type} (int), \texttt{field}, \texttt{field\_prev} (float*), \texttt{a}, \texttt{c} (float) & ninguna & Corre las 20 iteraciones de Gauss-Seidel red-black dentro de una sola region paralela. \\
-\texttt{diffuse} & \texttt{bnd\_type} (int), \texttt{field}, \texttt{field\_prev} (float*), \texttt{diff}, \texttt{dt} (float), \texttt{n} (int) & ninguna & Arma los coeficientes y llama a \texttt{solve\_linear} para difusion implicita. \\
-\texttt{advect} & \texttt{bnd\_type} (int), \texttt{field}, \texttt{field\_prev} (float*), \texttt{vel\_x}, \texttt{vel\_y} (float*), \texttt{dt} (float) & ninguna & Adveccion semi-Lagrangiana (paralelo, \texttt{collapse(2)}). \\
-\texttt{project} & \texttt{vel\_x}, \texttt{vel\_y}, \texttt{pressure}, \texttt{divergence} (float*) & ninguna & Proyeccion de Hodge: mide divergencia, resuelve presion, resta el gradiente de la velocidad. \\
+\texttt{add\_source} & \texttt{dest}, \texttt{source} (float*), \texttt{dt} (float), \texttt{n} (int) & ninguna & Suma el término fuente a cada celda (paralelo). \\
+\texttt{relax\_color} & \texttt{field}, \texttt{field\_prev} (float*), \texttt{a}, \texttt{inv\_c} (float), \texttt{parity} (int) & ninguna & Actualiza las celdas de una paridad del tablero red-black (paralelo, dentro de región \texttt{omp parallel}). \\
+\texttt{solve\_linear} & \texttt{bnd\_type} (int), \texttt{field}, \texttt{field\_prev} (float*), \texttt{a}, \texttt{c} (float) & ninguna & Corre las 20 iteraciones de Gauss-Seidel red-black dentro de una sola región paralela. \\
+\texttt{diffuse} & \texttt{bnd\_type} (int), \texttt{field}, \texttt{field\_prev} (float*), \texttt{diff}, \texttt{dt} (float), \texttt{n} (int) & ninguna & Arma los coeficientes y llama a \texttt{solve\_linear} para difusión implícita. \\
+\texttt{advect} & \texttt{bnd\_type} (int), \texttt{field}, \texttt{field\_prev} (float*), \texttt{vel\_x}, \texttt{vel\_y} (float*), \texttt{dt} (float) & ninguna & Advección semi-Lagrangiana (paralelo, \texttt{collapse(2)}). \\
+\texttt{project} & \texttt{vel\_x}, \texttt{vel\_y}, \texttt{pressure}, \texttt{divergence} (float*) & ninguna & Proyección de Hodge: mide divergencia, resuelve presión, resta el gradiente de la velocidad. \\
 \texttt{swap\_fields} & \texttt{field\_a}, \texttt{field\_b} (float**) & ninguna (intercambia punteros) & Intercambia los punteros de dos buffers de campo. \\
-\texttt{ink\_step} & \texttt{ink}, \texttt{ink\_prev} (float**), \texttt{vel\_x}, \texttt{vel\_y} (float*), \texttt{diff}, \texttt{dt} (float), \texttt{n} (int) & ninguna & Un paso completo (difusion + adveccion) para un canal de tinta. \\
-\texttt{velocity\_step} & \texttt{fields} (FluidFields*), \texttt{viscosity}, \texttt{dt} (float) & ninguna & Un paso completo de velocidad: fuerza, difusion, proyeccion, autoadveccion, proyeccion. \\
+\texttt{ink\_step} & \texttt{ink}, \texttt{ink\_prev} (float**), \texttt{vel\_x}, \texttt{vel\_y} (float*), \texttt{diff}, \texttt{dt} (float), \texttt{n} (int) & ninguna & Un paso completo (difusión + advección) para un canal de tinta. \\
+\texttt{velocity\_step} & \texttt{fields} (FluidFields*), \texttt{viscosity}, \texttt{dt} (float) & ninguna & Un paso completo de velocidad: fuerza, difusión, proyección, autoadveccion, proyección. \\
 \bottomrule
 \end{longtable}
 
 \subsection*{\texttt{nbody.c}}
 \begin{longtable}{L{4cm}L{4.1cm}L{2.2cm}L{3.7cm}}
 \toprule
-Funcion & Entradas & Salidas & Descripcion \\
+Función & Entradas & Salidas & Descripción \\
 \midrule
-\texttt{bh\_new\_node} & \texttt{cx}, \texttt{cy}, \texttt{half} (float) & retorna int (indice del nodo) & Crea un nodo nuevo del quadtree Barnes-Hut. \\
+\texttt{bh\_new\_node} & \texttt{cx}, \texttt{cy}, \texttt{half} (float) & retorna int (índice del nodo) & Crea un nodo nuevo del quadtree Barnes-Hut. \\
 \texttt{bh\_quadrant} & \texttt{n} (QuadNode*), \texttt{x}, \texttt{y} (float) & retorna int (0-3) & Determina en que cuadrante cae un punto. \\
 \texttt{bh\_subdivide} & \texttt{idx} (int) & ninguna & Crea los 4 hijos de un nodo. \\
-\texttt{bh\_insert} & \texttt{idx}, \texttt{body} (int), \texttt{sources} (InkSource*), \texttt{depth} (int) & ninguna & Inserta una fuente en el arbol recursivamente. \\
-\texttt{bh\_accumulate} & \texttt{idx}, \texttt{body} (int), \texttt{sources} (InkSource*), \texttt{acc\_x}, \texttt{acc\_y} (float*) & ninguna (acumula en \texttt{acc\_x}\allowbreak/\texttt{acc\_y}) & Recorre el arbol acumulando aceleracion gravitacional sobre una fuente. \\
-\texttt{update\_nbody\_sources} & \texttt{sources} (InkSource*), \texttt{count}, \texttt{resolution} (int) & ninguna & Reconstruye el arbol, calcula gravedad, integra posicion/velocidad y aplica rebote en bordes. \\
+\texttt{bh\_insert} & \texttt{idx}, \texttt{body} (int), \texttt{sources} (InkSource*), \texttt{depth} (int) & ninguna & Inserta una fuente en el árbol recursivamente. \\
+\texttt{bh\_accumulate} & \texttt{idx}, \texttt{body} (int), \texttt{sources} (InkSource*), \texttt{acc\_x}, \texttt{acc\_y} (float*) & ninguna (acumula en \texttt{acc\_x}\allowbreak/\texttt{acc\_y}) & Recorre el árbol acumulando aceleración gravitacional sobre una fuente. \\
+\texttt{update\_nbody\_sources} & \texttt{sources} (InkSource*), \texttt{count}, \texttt{resolution} (int) & ninguna & Reconstruye el árbol, calcula gravedad, integra posición/velocidad y aplica rebote en bordes. \\
 \bottomrule
 \end{longtable}
 
 \subsection*{\texttt{render.c}}
 \begin{longtable}{L{4cm}L{4.1cm}L{2.2cm}L{3.7cm}}
 \toprule
-Funcion & Entradas & Salidas & Descripcion \\
+Función & Entradas & Salidas & Descripción \\
 \midrule
-\texttt{sample\_bilinear} & \texttt{field} (float*), \texttt{fx}, \texttt{fy} (float) & retorna float & Interpola bilinealmente un campo en una posicion continua. \\
+\texttt{sample\_bilinear} & \texttt{field} (float*), \texttt{fx}, \texttt{fy} (float) & retorna float & Interpola bilinealmente un campo en una posición continua. \\
 \texttt{render\_ink} & \texttt{texture} (SDL\_Texture*), \texttt{fields} (FluidFields*), \texttt{width}, \texttt{height} (int) & ninguna & Vuelca la densidad de tinta a la textura SDL, un pixel a la vez (paralelo, \texttt{collapse(2)}). \\
 \bottomrule
 \end{longtable}
@@ -797,7 +1100,7 @@ Funcion & Entradas & Salidas & Descripcion \\
 \subsection*{\texttt{background.c}}
 \begin{longtable}{L{4cm}L{4.1cm}L{2.2cm}L{3.7cm}}
 \toprule
-Funcion & Entradas & Salidas & Descripcion \\
+Función & Entradas & Salidas & Descripción \\
 \midrule
 \texttt{init\_background} & \texttt{stars} (Star*), \texttt{count}, \texttt{width}, \texttt{height} (int) & ninguna & Coloca estrellas de fondo en posiciones aleatorias. \\
 \texttt{update\_background} & \texttt{stars} (Star*), \texttt{count} (int) & ninguna & Avanza el parpadeo de cada estrella. \\
@@ -808,9 +1111,9 @@ Funcion & Entradas & Salidas & Descripcion \\
 \subsection*{\texttt{utils.c}}
 \begin{longtable}{L{4cm}L{4.1cm}L{2.2cm}L{3.7cm}}
 \toprule
-Funcion & Entradas & Salidas & Descripcion \\
+Función & Entradas & Salidas & Descripción \\
 \midrule
-\texttt{random\_range} & \texttt{min}, \texttt{max} (float) & retorna float & Numero pseudoaleatorio uniforme en $[min, max]$. \\
+\texttt{random\_range} & \texttt{min}, \texttt{max} (float) & retorna float & Número pseudoaleatorio uniforme en $[min, max]$. \\
 \texttt{clamp} & \texttt{value}, \texttt{min}, \texttt{max} (float) & retorna float & Limita un valor al rango $[min, max]$. \\
 \bottomrule
 \end{longtable}
@@ -818,9 +1121,9 @@ Funcion & Entradas & Salidas & Descripcion \\
 \subsection*{\texttt{main.c}}
 \begin{longtable}{L{4cm}L{4.1cm}L{2.2cm}L{3.7cm}}
 \toprule
-Funcion & Entradas & Salidas & Descripcion \\
+Función & Entradas & Salidas & Descripción \\
 \midrule
-\texttt{main} & \texttt{argc} (int), \texttt{argv} (char**) & retorna int (codigo de salida) & Punto de entrada: parsea argumentos, inicializa SDL y memoria, corre el bucle principal, libera todo al salir. \\
+\texttt{main} & \texttt{argc} (int), \texttt{argv} (char**) & retorna int (código de salida) & Punto de entrada: parsea argumentos, inicializa SDL y memoria, corre el bucle principal, libera todo al salir. \\
 \bottomrule
 \end{longtable}
 
@@ -828,15 +1131,15 @@ Funcion & Entradas & Salidas & Descripcion \\
 % ANEXO 3: BITACORA DE PRUEBAS
 % ============================================================
 \clearpage
-\section{Anexo 3: Bitacora de pruebas}
+\section{Anexo 3. Bitácora de pruebas}
 
-\subsection*{Metodologia}
+\subsection*{Metodología}
 
-Cada configuracion se corrio con semilla fija (\texttt{-s 42}), ignorando
+Cada configuración se corrió con semilla fija (\texttt{-s 42}), ignorando
 las primeras lineas de FPS (calentamiento/cache fria), y promediando el
-resto. La bateria estandar (15 configuraciones, Tabla \ref{tab:matrix})
-se repitio identica despues de cada paso de la cadena; son 15 mediciones
-por paso, mas de las 10 minimas requeridas.
+resto. La batería estándar (15 configuraciones, Tabla \ref{tab:matrix})
+se repitio identica después de cada paso de la cadena; son 15 mediciones
+por paso, más de las 10 mínimas requeridas.
 
 \begin{table}[ht]
 \centering
@@ -845,24 +1148,24 @@ por paso, mas de las 10 minimas requeridas.
 \toprule
 Fila & \texttt{-n} & \texttt{-f} & Motivo \\
 \midrule
-A6/A12   & 64   & 6/12  & malla chica, referencia rapida \\
-B6/B12   & 256  & 6/12  & configuracion default \\
+A6/A12   & 64   & 6/12  & malla chica, referencia rápida \\
+B6/B12   & 256  & 6/12  & configuración default \\
 C6/C12   & 512  & 6/12  & malla grande, domina el solver \\
 H6/H12   & 600  & 6/12  & rango de FPS medio observado \\
 I6/I12   & 700  & 6/12  & extremo superior de ese rango \\
-D6/D12   & 1024 & 6/12  & malla muy grande, limite superior \\
+D6/D12   & 1024 & 6/12  & malla muy grande, límite superior \\
 E        & 256  & 4     & pocas fuentes \\
 F        & 256  & 64    & muchas fuentes \\
-G        & 256  & 256   & limite superior de fuentes \\
+G        & 256  & 256   & límite superior de fuentes \\
 \bottomrule
 \end{tabular}
-\caption{Bateria estandar de pruebas (15 configuraciones).}
+\caption{Batería estándar de pruebas (15 configuraciones).}
 \label{tab:matrix}
 \end{table}
 
 Para el barrido de \texttt{schedule} (Tabla \ref{tab:schedule-sweep}) se
-probaron 10 combinaciones de politica/chunk, cada una en 2 tamanos de
-malla: 20 mediciones. Para la escalabilidad por hilos (Tablas
+probaron 10 combinaciones de política/chunk, cada una en 2 tamaños de
+malla, 20 mediciones en total. Para la escalabilidad por hilos (Tablas
 \ref{tab:threads} y \ref{tab:threads-700}) se probaron 6 cantidades de
 hilos por curva.
 
@@ -870,7 +1173,7 @@ hilos por curva.
 
 A continuacion, salida real de consola de una corrida de referencia
 ($n=256$, $f=6$, semilla 42), mostrando el arranque, calentamiento y
-estabilizacion del FPS:
+estabilización del FPS.
 
 \begin{lstlisting}[style=terminal]
 Fluid simulation (Navier-Stokes) - SEQUENTIAL version
@@ -896,9 +1199,9 @@ FPS= 70.27
 FPS= 77.99
 \end{lstlisting}
 
-Nota: la etiqueta "SEQUENTIAL version" en el encabezado es texto residual
-del archivo \texttt{main.c} (no se actualizo al paralelizar); el binario
-usado en esta corrida es la version paralela con OpenMP habilitado (20
+La etiqueta "SEQUENTIAL version" en el encabezado es texto residual
+del archivo \texttt{main.c} (no se actualizó al paralelizar); el binario
+usado en esta corrida es la versión paralela con OpenMP habilitado (20
 hilos).
 
 \subsection*{Comando usado}
@@ -909,10 +1212,10 @@ timeout 30s ./ss -n <N> -f <F> -s 42 2>/dev/null \
   | awk -F'= ' '{s+=$2; c++} END {printf "FPS promedio: %.2f\n", s/c}'
 \end{lstlisting}
 
-El resto de las mediciones completas (las 15 filas de la bateria estandar
-por cada paso, el barrido de schedule y las curvas de escalabilidad) estan
-documentadas en \texttt{docs/Roadmap.md} dentro del repositorio del
-proyecto, junto con el historial de commits que muestra cuando se corrio
-cada bateria.
+El resto de las mediciones completas (las 15 filas de la batería estándar
+por cada paso, el barrido de schedule y las curvas de escalabilidad) están
+en las tablas de la Sección \ref{sec:resultados} de este mismo informe.
+El historial de commits del repositorio muestra cuándo se corrió cada
+batería.
 
 \end{document}

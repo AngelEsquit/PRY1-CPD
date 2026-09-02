@@ -39,7 +39,7 @@ static void apply_boundary(int bnd_type, float *field) {
 }
 
 // Merges this frame's injected force/ink (in `source`, already written by
-// sources.c) into the real field, scaled by dt.
+// sources.c) into the real field, scaled by dt. The f term, u += dt*f.
 static void add_source(float *dest, const float *source, float dt,
                        int total_cells) {
   int i;
@@ -59,9 +59,19 @@ static void relax_color(float *field, const float *field_prev, float a,
                         float inv_c, int parity) {
   #pragma omp for schedule(static)
   for (int j = 1; j <= grid_n; j++) {
+    // Which column to start at so we only touch cells of this color.
+    // Think of the grid as a checkerboard, parity 0 is the red squares,
+    // parity 1 is the black ones. start_i picks the first red (or black)
+    // cell in this row, and the loop below skips by 2 to stay on that
+    // same color the rest of the way across.
     int start_i = (((1 + j) % 2) == parity) ? 1 : 2;
 
     for (int i = start_i; i <= grid_n; i += 2) {
+      // New value for this cell = its own old value, plus a fraction (a)
+      // of what its 4 neighbors currently hold, all scaled down by
+      // inv_c so the result stays in a sane range. This is just "nudge
+      // this cell toward matching its neighbors," repeated many times
+      // (see solve_linear) until the whole grid settles down.
       field[IX(i, j)] = (field_prev[IX(i, j)] +
                          a * (field[IX(i - 1, j)] + field[IX(i + 1, j)] +
                               field[IX(i, j - 1)] + field[IX(i, j + 1)])) *
@@ -70,9 +80,8 @@ static void relax_color(float *field, const float *field_prev, float a,
   }
 }
 
-// Iteratively solves new_value = (starting_value + a * sum_of_4_neighbors) / c
-// using Red-Black Gauss-Seidel relaxation. Each iteration is split into two
-// sub-steps: red cells (parity 0) then black cells (parity 1).
+// Approximates the sparse system A*u = u0 (one equation per cell) by
+// running relax_color GAUSS_SEIDEL_ITERS times, red cells then black.
 //
 // A single OpenMP parallel region encloses all GAUSS_SEIDEL_ITERS iterations
 // to avoid thread team fork/join overhead on every sub-step. Implicit
@@ -97,19 +106,19 @@ static void solve_linear(int bnd_type, float *field, const float *field_prev,
   }
 }
 
-// Smooths the field toward its neighbors' average. Just works out the a/c
-// constants solve_linear() needs from the diffusion rate, dt, and grid
-// size, then hands off.
+// Smooths the field toward its neighbors' average (the nu*laplacian(u)
+// term). a = nu*dt*n^2, how strongly a cell pulls toward its neighbors.
 static void diffuse(int bnd_type, float *field, const float *field_prev,
                     float coefficient, float dt) {
   const float a = dt * coefficient * (float)grid_n * (float)grid_n;
   solve_linear(bnd_type, field, field_prev, a, 1.0f + 4.0f * a);
 }
 
-// Carries the field along the velocity field. For each cell: trace
-// backward along velocity to find where its new value should come from,
-// then bilinearly interpolate (blend the 4 nearest cells) since that point
-// almost never lands exactly on a cell.
+// Carries the field along the velocity field (the -(u.grad)u term). For
+// each cell: trace backward along velocity to find where its new value
+// should come from, then average the 4 real cells around that point,
+// weighted by how close each one is (closer cell counts more), since
+// that point almost never lands exactly on a cell.
 static void advect(int bnd_type, float *field, const float *field_prev,
                    const float *vel_x, const float *vel_y, float dt) {
   int i, j, i0, i1, j0, j1;
@@ -125,29 +134,48 @@ static void advect(int bnd_type, float *field, const float *field_prev,
   #pragma omp parallel for collapse(2) \
       private(i0, i1, j0, j1, origin_x, origin_y, \
               weight_i1, weight_i0, weight_j1, weight_j0) schedule(static)
+  // This loop visits every real cell (i, j) once and decides what its new
+  // value should be. Nothing here writes to any other cell, so any cell
+  // can run on any thread without stepping on another cell's work.
   for (j = 1; j <= grid_n; j++) {
     for (i = 1; i <= grid_n; i++) {
-      // Step backward along this cell's own velocity.
+      // "Where did this cell's stuff come from?" Take cell (i, j)'s own
+      // position and walk backward by one time step along its own
+      // velocity. dt_grid is just dt scaled to grid units. The result,
+      // (origin_x, origin_y), is a point that usually lands *between*
+      // cells, not on one, e.g. (12.3, 7.8) instead of (12, 8).
       origin_x = (float)i - dt_grid * vel_x[IX(i, j)];
       origin_y = (float)j - dt_grid * vel_y[IX(i, j)];
 
-      // Keep it inside the grid so the lookup below stays in bounds.
+      // If the velocity was big, that point could land outside the grid
+      // entirely. clamp() just pins it back to the valid range so the
+      // lookups below don't read garbage out of bounds.
       origin_x = clamp(origin_x, 0.5f, limit);
       origin_y = clamp(origin_y, 0.5f, limit);
 
-      // The 4 real cells surrounding that (fractional) origin point.
+      // Since (origin_x, origin_y) is a fractional point, not an actual
+      // cell, grab the 4 real cells that surround it. i0/j0 round down,
+      // i1/j1 are just the next cell over (i0+1, j0+1). Picture a small
+      // 2x2 box of real cells with the origin point somewhere inside it.
       i0 = (int)origin_x;
       i1 = i0 + 1;
       j0 = (int)origin_y;
       j1 = j0 + 1;
 
-      // How close the origin is to each side, used to weight the blend.
+      // How far the origin point is from each side of that 2x2 box, as a
+      // fraction between 0 and 1. If origin_x is 12.3, it's 0.3 of the
+      // way from cell 12 to cell 13, so weight_i1 = 0.3 (closer to i0)
+      // and weight_i0 = 0.7. Same idea for the y direction.
       weight_i1 = origin_x - (float)i0;
       weight_i0 = 1.0f - weight_i1;
       weight_j1 = origin_y - (float)j0;
       weight_j0 = 1.0f - weight_j1;
 
-      // Blend those 4 cells' old values by distance (bilinear interpolation).
+      // Now blend the 4 surrounding cells' old values into one number:
+      // each cell's value gets multiplied by how close the origin point
+      // was to it (a cell right next to the origin counts a lot, a cell
+      // on the far side of the box counts little), and the 4 results get
+      // added up. That sum becomes this cell's new value.
       field[IX(i, j)] = weight_i0 * (weight_j0 * field_prev[IX(i0, j0)] +
                                      weight_j1 * field_prev[IX(i0, j1)]) +
                         weight_i1 * (weight_j0 * field_prev[IX(i1, j0)] +
@@ -158,16 +186,21 @@ static void advect(int bnd_type, float *field, const float *field_prev,
   apply_boundary(bnd_type, field);
 }
 
-// Velocity-only. Real fluid can't locally bunch up or thin out, so this
-// measures where that's happening, solves for a pressure field that would
-// cancel it, and subtracts that pressure's push from velocity. This is
-// also what makes the flow swirl instead of just spreading outward.
+// Velocity-only. A real fluid can't pile up or thin out anywhere, but the
+// other 3 steps (force/diffuse/advect) can accidentally make that happen
+// a little. This function finds wherever that happened and undoes it, in
+// 3 stages: measure the problem, solve for a pressure field that would
+// fix it, then apply that fix.
 static void project(float *vel_x, float *vel_y, float *pressure,
                     float *divergence) {
   int i, j;
   const float h = 1.0f / (float)grid_n;
 
-  // Measure how much more velocity leaves each cell than enters it.
+  // Stage 1, measure the problem. For each cell, compare how much
+  // velocity is flowing out of it against how much is flowing in
+  // (looking at the left/right and up/down neighbors). If more is
+  // leaving than entering, that cell is "thinning out," and vice versa.
+  // That imbalance gets stored in `divergence`.
   #pragma omp parallel for collapse(2) schedule(static)
   for (j = 1; j <= grid_n; j++) {
     for (i = 1; i <= grid_n; i++) {
@@ -180,10 +213,16 @@ static void project(float *vel_x, float *vel_y, float *pressure,
   apply_boundary(BND_SCALAR, divergence);
   apply_boundary(BND_SCALAR, pressure);
 
-  // Solve for the pressure field that would cancel that imbalance out.
+  // Stage 2, solve for a fix. This calls the exact same neighbor-averaging
+  // code as diffuse() (relax_color, run 20 times), but this time it's
+  // solving for a `pressure` value per cell that would cancel out the
+  // divergence measured above.
   solve_linear(BND_SCALAR, pressure, divergence, 1.0f, 4.0f);
 
-  // Push velocity away from high pressure, toward low.
+  // Stage 3, apply the fix. Push velocity away from high-pressure cells
+  // and toward low-pressure ones (comparing each cell to its left/right
+  // and up/down neighbors again), which is exactly what cancels out the
+  // piling-up/thinning-out problem measured in stage 1.
   #pragma omp parallel for collapse(2) schedule(static)
   for (j = 1; j <= grid_n; j++) {
     for (i = 1; i <= grid_n; i++) {

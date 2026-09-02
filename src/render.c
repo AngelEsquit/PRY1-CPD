@@ -10,25 +10,36 @@
 // reaches opaque faster even at low ink brightness.
 #define ALPHA_GAMMA 0.35f
 
-// Bilinearly interpolates "field" at continuous position (fx, fy), in the
-// same coordinate space as a pixel index of the N x N texture. fx=0 is
-// interior cell 1's center, fx=grid_n-1 is interior cell grid_n's center.
+// Reads "field" at a fractional position (fx, fy) by averaging the 4
+// real cells around that point, closer cell counts more. Same coordinate
+// space as a pixel index of the N x N texture: fx=0 is interior cell 1's
+// center, fx=grid_n-1 is interior cell grid_n's center.
 static float sample_bilinear(const float *field, float fx, float fy)
 {
     int i0, i1, j0, j1;
     float weight_x1, weight_x0, weight_y1, weight_y0;
 
+    // Pin (fx, fy) inside the grid so nothing below reads out of bounds.
     fx = clamp(fx, 0.0f, (float)(grid_n - 1));
     fy = clamp(fy, 0.0f, (float)(grid_n - 1));
 
+    // (fx, fy) is a fractional pixel position, not an actual cell, so
+    // grab the 2 real columns and 2 real rows around it (i0/i1, j0/j1).
+    // Together they form a small 2x2 box of real cells with (fx, fy)
+    // somewhere inside.
     i0 = (int)fx;  i1 = (i0 < grid_n - 1) ? i0 + 1 : i0;
     j0 = (int)fy;  j1 = (j0 < grid_n - 1) ? j0 + 1 : j0;
 
+    // How far into that box (fx, fy) sits, as a fraction between 0 and 1
+    // on each axis, used below to weight each corner's contribution.
     weight_x1 = fx - (float)i0;  weight_x0 = 1.0f - weight_x1;
     weight_y1 = fy - (float)j0;  weight_y0 = 1.0f - weight_y1;
 
-    // +1 shifts from pixel space (0..N-1) to the interior cell index
-    // (1..N) inside the grid with its ghost ring.
+    // Blend the field's value at the 4 corners of that box into one
+    // number: each corner counts in proportion to how close (fx, fy) is
+    // to it. The "+1" on every index just shifts from pixel numbering
+    // (0..N-1) to this grid's real-cell numbering (1..N), since cell 0
+    // is the ghost border, not real data.
     return weight_x0 * (weight_y0 * field[IX(i0 + 1, j0 + 1)] +
                         weight_y1 * field[IX(i0 + 1, j1 + 1)]) +
            weight_x1 * (weight_y0 * field[IX(i1 + 1, j0 + 1)] +
